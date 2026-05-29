@@ -33,97 +33,43 @@ To work on the project after SSH-ing in:
 cd /opt/Milanka
 ```
 
-## Setup
+## Install
 
-### Quick start (macOS / Linux)
-
-Run the bootstrap script — it creates the venv, installs the requirements, and leaves the venv active in your shell:
+One script does everything. On the Pi, from the repo root:
 
 ```bash
-source init.sh
+cd /opt/Milanka
+./init.sh
+sudo reboot
 ```
 
-> Must be **sourced**, not executed. Running `./init.sh` will activate the venv only inside the script's subshell,
-> leaving your shell unchanged.
+That's it. `init.sh` is idempotent — re-run it any time you bump dependencies, change the service unit, or want to re-apply the labwc config.
 
-When you're done:
+### What `init.sh` does
 
-```bash
-deactivate
-```
+1. **Creates `./venv` and installs `requirements.txt` into it.**
+2. **(Pi only) Configures the cursor to be invisible** by appending `XCURSOR_SIZE=1` to `~/.config/labwc/environment`. Skipped on macOS / non-Pi machines.
+3. **(Pi only) Installs the systemd user service** by running `service/service.sh`, which copies the unit to `~/.config/systemd/user/milanka.service`, calls `loginctl enable-linger`, and `enable`+`restart`s it.
 
-### Manual setup
+After the reboot:
 
-#### 1. Create the virtual environment
+- The desktop auto-logs in.
+- The systemd user service starts the app within a few seconds.
+- Both displays go black; PIRs control them edge-to-edge.
 
-```bash
-python3 -m venv venv
-```
+### Developing on macOS / non-Pi
 
-#### 2. Activate the virtual environment
-
-On macOS / Linux:
+`init.sh` still works — steps 2 and 3 are skipped automatically (`/etc/rpi-issue` doesn't exist), so you just get a working `venv/` for editing code. To run the script locally for tests, activate the venv yourself:
 
 ```bash
+./init.sh
 source venv/bin/activate
-```
-
-On Windows (PowerShell):
-
-```powershell
-venv\Scripts\Activate.ps1
-```
-
-On Windows (cmd):
-
-```cmd
-venv\Scripts\activate.bat
-```
-
-#### 3. Install dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
-> Note: `RPi.GPIO` only installs on a Raspberry Pi. On other systems (macOS, Windows, x86 Linux) the install will fail —
-> that's expected. Develop on those platforms without the dep, or use a mock library such as `Mock.GPIO`.
-
-#### 4. Run the script
-
-```bash
-python src/main.py
-```
-
-#### 5. Deactivate the virtual environment
-
-```bash
-deactivate
+python src/main.py    # will fail on import RPi.GPIO unless you mock it
 ```
 
 ## Run on boot (systemd user service)
 
-To keep the screen under control across reboots and crashes, the app can run as a **systemd user service**. The service
-starts with the desktop session (assumes desktop autologin is on — see step 3 in the SSH section), auto-restarts on
-failure, and writes logs to the journal.
-
-### One-time install
-
-On the Pi, in the project directory:
-
-```bash
-cd /opt/Milanka
-source init.sh              # ensures venv/ exists with deps installed
-bash service/service.sh     # installs and starts milanka.service
-```
-
-The installer:
-
-1. Copies `service/milanka.service` to `~/.config/systemd/user/`.
-2. Calls `loginctl enable-linger` so the user systemd instance survives logout and starts on boot.
-3. Runs `systemctl --user daemon-reload`, then `enable` + `restart` on the unit.
-
-After this, the service starts automatically every time the desktop logs in (i.e. every boot, given autologin).
+`init.sh` already installs this; this section is reference for what the service does and how to manage it after install.
 
 ### Managing it afterwards
 
