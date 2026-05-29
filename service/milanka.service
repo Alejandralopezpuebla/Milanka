@@ -7,6 +7,12 @@ Wants=graphical-session.target
 Type=simple
 WorkingDirectory=/opt/Milanka
 Environment=DISPLAY=:0
+Environment=WAYLAND_DISPLAY=wayland-0
+Environment=SDL_VIDEODRIVER=wayland,x11
+# Wait a few seconds for the desktop/Wayland compositor to be fully up before
+# pygame tries to grab the screen. Without this the service races labwc and
+# fails on the first attempt(s), then gets restart-looped.
+ExecStartPre=/bin/sleep 5
 ExecStart=/opt/Milanka/venv/bin/python /opt/Milanka/src/main.py
 Restart=on-failure
 RestartSec=3
