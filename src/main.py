@@ -10,8 +10,9 @@ os.environ.setdefault("DISPLAY", ":0")
 import pygame  # noqa: E402
 import RPi.GPIO as GPIO  # noqa: E402
 
-POLL_INTERVAL = 0.5      # seconds between readings
-HOLD_SECONDS = 3.0       # keep red this long after the last detected motion
+POLL_INTERVAL = 0.5            # seconds between PIR readings (in each subprocess)
+HOLD_SECONDS = 3.0             # keep red this long after the last detected motion
+HOTPLUG_CHECK_INTERVAL = 3.0   # how often the parent re-checks the display list
 
 # Display index → PIR pin (BCM numbering).
 #   Display 0 ← PIR on GPIO 4  (physical pin 7)
@@ -106,45 +107,107 @@ def detect_display_count() -> int:
         pygame.quit()
 
 
-def wait_for_displays() -> int:
-    """Block until at least one display is connected; return how many are present."""
-    while True:
-        n = detect_display_count()
-        if n > 0:
-            return n
-        print("No displays detected, waiting... (re-checking in 5s)", flush=True)
-        time.sleep(5)
+def spawn_controller(display_index: int) -> mp.Process:
+    pin = DISPLAY_PIN_MAP[display_index]
+    p = mp.Process(
+        target=control_display,
+        args=(display_index, pin),
+        name=f"display-{display_index}",
+    )
+    p.start()
+    print(
+        f"+ Display {display_index} present → started subprocess (pid={p.pid}, gpio={pin})",
+        flush=True,
+    )
+    return p
 
 
 def main() -> None:
-    n_displays = wait_for_displays()
-    n_to_control = min(n_displays, len(DISPLAY_PIN_MAP))
-    print(
-        f"Found {n_displays} display(s); controlling {n_to_control}.",
-        flush=True,
-    )
+    procs: dict[int, mp.Process] = {}
+    shutting_down = False
 
-    procs: list[mp.Process] = []
-    for i in range(n_to_control):
-        pin = DISPLAY_PIN_MAP[i]
-        p = mp.Process(target=control_display, args=(i, pin), name=f"display-{i}")
-        p.start()
-        procs.append(p)
-        print(f"Started {p.name} (pid={p.pid}) for GPIO {pin}", flush=True)
-
-    def shutdown(signum, frame):
-        print(f"\nReceived signal {signum}, stopping children...", flush=True)
-        for p in procs:
+    def shutdown(signum, _frame):
+        nonlocal shutting_down
+        if shutting_down:
+            return
+        shutting_down = True
+        print(
+            f"\nReceived signal {signum}, stopping all controllers...",
+            flush=True,
+        )
+        for p in procs.values():
             if p.is_alive():
                 p.terminate()
-        for p in procs:
+        for p in procs.values():
             p.join(timeout=5)
 
     signal.signal(signal.SIGTERM, shutdown)
     signal.signal(signal.SIGINT, shutdown)
 
-    for p in procs:
-        p.join()
+    print(
+        f"Display watcher started (polling every {HOTPLUG_CHECK_INTERVAL}s).",
+        flush=True,
+    )
+
+    previously_logged_count = -1
+
+    while not shutting_down:
+        # 1. Detect what's currently plugged in.
+        try:
+            n_displays = detect_display_count()
+        except Exception as e:
+            print(f"! display detection failed: {e}", flush=True)
+            n_displays = 0
+
+        target_indices = set(range(min(n_displays, len(DISPLAY_PIN_MAP))))
+
+        # 2. Reap dead subprocesses (could have crashed, or display disappeared).
+        for i in list(procs.keys()):
+            if not procs[i].is_alive():
+                exit_code = procs[i].exitcode
+                procs[i].join()
+                del procs[i]
+                # We'll respawn below if the display is still target; otherwise
+                # the display went away and this is expected.
+                if i in target_indices:
+                    print(
+                        f"! display-{i} exited unexpectedly (code={exit_code}); will respawn",
+                        flush=True,
+                    )
+
+        running_indices = set(procs.keys())
+
+        # 3. Stop controllers whose display vanished.
+        for i in sorted(running_indices - target_indices):
+            p = procs[i]
+            print(
+                f"- Display {i} gone → stopping subprocess (pid={p.pid})",
+                flush=True,
+            )
+            p.terminate()
+            p.join(timeout=5)
+            del procs[i]
+
+        # 4. Start controllers for any newly-present display.
+        for i in sorted(target_indices - set(procs.keys())):
+            procs[i] = spawn_controller(i)
+
+        # 5. Periodic status, but only when the visible count changes.
+        if n_displays != previously_logged_count:
+            if n_displays == 0:
+                print("No displays detected, waiting...", flush=True)
+            else:
+                print(
+                    f"Now controlling {len(procs)} of {n_displays} display(s).",
+                    flush=True,
+                )
+            previously_logged_count = n_displays
+
+        # 6. Sleep until next reconciliation, in small slices so shutdown is responsive.
+        elapsed = 0.0
+        while elapsed < HOTPLUG_CHECK_INTERVAL and not shutting_down:
+            time.sleep(0.1)
+            elapsed += 0.1
 
 
 if __name__ == "__main__":
