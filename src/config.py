@@ -11,9 +11,15 @@ HOTPLUG_CHECK_INTERVAL = 3.0   # how often the parent re-checks the display list
 IDLE_TIMEOUT_SECONDS = 60 * 60  # turn the display off after this many seconds of no motion
 POWER_ON_DELAY_MS = 1500        # show black for this long after waking, before video
 
+# Auto-update. Set to 0 to disable.
+UPDATE_CHECK_INTERVAL = 3600    # seconds between `git fetch` checks (0 disables)
+
+# Repo root (used for git operations and to resolve video.mp4).
+REPO_DIR = pathlib.Path(__file__).resolve().parent.parent
+
 # Video file shown on motion. If missing or unreadable, the app falls back to a
-# red fullscreen with identical triggering. Path resolves to the repo root.
-VIDEO_PATH = pathlib.Path(__file__).resolve().parent.parent / "video.mp4"
+# red fullscreen with identical triggering.
+VIDEO_PATH = REPO_DIR / "video.mp4"
 
 # Display index → PIR pin (BCM numbering).
 #   Display 0 ← PIR on GPIO 4  (physical pin 7)

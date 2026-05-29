@@ -81,10 +81,21 @@ After `IDLE_TIMEOUT_SECONDS` of no motion (default 60 minutes) each display is p
 `wlr-randr --output … --off`. The next motion event powers it back on, shows black for `POWER_ON_DELAY_MS` (default 1500
 ms) so the monitor can finish its handshake, and then starts the video.
 
-The display-index → output-name mapping is `DISPLAY_OUTPUT_NAMES` in `src/main.py`. Default is `HDMI-A-1` / `HDMI-A-2` (
-Pi 4 with KMS). Run `wlr-randr` on the Pi to confirm the names if power-off isn't working.
+The display-index → output-name mapping is `DISPLAY_OUTPUT_NAMES` in `src/config.py`. Default is `HDMI-A-1` / `HDMI-A-2`
+(Pi 4 with KMS). Run `wlr-randr` on the Pi to confirm the names if power-off isn't working.
 
 If `wlr-randr` isn't installed, the app skips power management and logs a notice — the rest still works.
+
+### Auto-update
+
+Every `UPDATE_CHECK_INTERVAL` seconds (default 3600 = 1 hour) the parent process runs `git fetch`. If the upstream
+branch has new commits, it does `git pull --ff-only` and exits — systemd then restarts the service with the new code
+(thanks to `Restart=always` in the unit). If there's no internet, the fetch fails silently and the loop keeps running;
+the next check happens an hour later.
+
+Local edits that block a fast-forward (uncommitted changes or diverged history) cause the pull to fail loudly in the
+journal; the service keeps running on the old code until the conflict is resolved. To disable auto-update entirely,
+set `UPDATE_CHECK_INTERVAL = 0` in `src/config.py`.
 
 ### Developing on macOS / non-Pi
 

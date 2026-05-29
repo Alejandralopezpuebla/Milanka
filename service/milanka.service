@@ -14,7 +14,10 @@ Environment=SDL_VIDEODRIVER=wayland,x11
 # fails on the first attempt(s), then gets restart-looped.
 ExecStartPre=/bin/sleep 5
 ExecStart=/opt/Milanka/venv/bin/python /opt/Milanka/src/main.py
-Restart=on-failure
+# Restart=always so the auto-updater can sys.exit(0) and have systemd bring
+# us back with the new code. systemctl stop/restart are still respected
+# (systemd-initiated stops don't trigger Restart=).
+Restart=always
 RestartSec=3
 
 [Install]
