@@ -43,13 +43,16 @@ cd /opt/Milanka
 sudo reboot
 ```
 
-That's it. `init.sh` is idempotent — re-run it any time you bump dependencies, change the service unit, or want to re-apply the labwc config.
+That's it. `init.sh` is idempotent — re-run it any time you bump dependencies, change the service unit, or want to
+re-apply the labwc config.
 
 ### What `init.sh` does
 
 1. **Creates `./venv` and installs `requirements.txt` into it.**
-2. **(Pi only) Configures the cursor to be invisible** by appending `XCURSOR_SIZE=1` to `~/.config/labwc/environment`. Skipped on macOS / non-Pi machines.
-3. **(Pi only) Installs the systemd user service** by running `service/service.sh`, which copies the unit to `~/.config/systemd/user/milanka.service`, calls `loginctl enable-linger`, and `enable`+`restart`s it.
+2. **(Pi only) Configures the cursor to be invisible** by appending `XCURSOR_SIZE=1` to `~/.config/labwc/environment`.
+   Skipped on macOS / non-Pi machines.
+3. **(Pi only) Installs the systemd user service** by running `service/service.sh`, which copies the unit to
+   `~/.config/systemd/user/milanka.service`, calls `loginctl enable-linger`, and `enable`+`restart`s it.
 
 After the reboot:
 
@@ -59,9 +62,12 @@ After the reboot:
 
 ### Video on motion
 
-Place a `video.mp4` in the repo root. When a PIR fires, the matching display switches from black to playing the video on a loop. When motion stops for `HOLD_SECONDS`, the screen returns to black; the next motion event restarts the video from frame 0.
+Place a `video.mp4` in the repo root. When a PIR fires, the matching display switches from black to playing the video on
+a loop. When motion stops for `HOLD_SECONDS`, the screen returns to black; the next motion event restarts the video from
+frame 0.
 
-If `video.mp4` is missing (or unreadable), the app falls back to the original red-screen behavior — same triggering, just a flat red fullscreen instead of video.
+If `video.mp4` is missing (or unreadable), the app falls back to the original red-screen behavior — same triggering,
+just a flat red fullscreen instead of video.
 
 To swap the video, drop a new file at `/opt/Milanka/video.mp4` and restart the service:
 
@@ -69,9 +75,21 @@ To swap the video, drop a new file at `/opt/Milanka/video.mp4` and restart the s
 systemctl --user restart milanka
 ```
 
+### Power saving
+
+After `IDLE_TIMEOUT_SECONDS` of no motion (default 60 minutes) each display is powered off via
+`wlr-randr --output … --off`. The next motion event powers it back on, shows black for `POWER_ON_DELAY_MS` (default 1500
+ms) so the monitor can finish its handshake, and then starts the video.
+
+The display-index → output-name mapping is `DISPLAY_OUTPUT_NAMES` in `src/main.py`. Default is `HDMI-A-1` / `HDMI-A-2` (
+Pi 4 with KMS). Run `wlr-randr` on the Pi to confirm the names if power-off isn't working.
+
+If `wlr-randr` isn't installed, the app skips power management and logs a notice — the rest still works.
+
 ### Developing on macOS / non-Pi
 
-`init.sh` still works — steps 2 and 3 are skipped automatically (`/etc/rpi-issue` doesn't exist), so you just get a working `venv/` for editing code. To run the script locally for tests, activate the venv yourself:
+`init.sh` still works — steps 2 and 3 are skipped automatically (`/etc/rpi-issue` doesn't exist), so you just get a
+working `venv/` for editing code. To run the script locally for tests, activate the venv yourself:
 
 ```bash
 ./init.sh

@@ -55,6 +55,17 @@ if [ -f /etc/rpi-issue ]; then
     fi
 fi
 
+# Pi-only: ensure wlr-randr is installed (used for display power management).
+if [ -f /etc/rpi-issue ]; then
+    if ! command -v wlr-randr >/dev/null 2>&1; then
+        echo "Installing wlr-randr (sudo required, used for screen power-off)..."
+        sudo apt-get update -qq
+        sudo apt-get install -y wlr-randr
+    else
+        echo "wlr-randr already installed."
+    fi
+fi
+
 # 3. Pi-only: systemd user service
 if [ -f /etc/rpi-issue ] && [ -f service/service.sh ]; then
     echo "Installing / refreshing systemd user service..."

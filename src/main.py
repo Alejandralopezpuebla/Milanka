@@ -1,7 +1,9 @@
 import multiprocessing as mp
 import os
 import pathlib
+import shutil
 import signal
+import subprocess
 import time
 from datetime import datetime
 
@@ -15,6 +17,10 @@ POLL_INTERVAL = 0.5            # seconds between PIR readings (in each subproces
 HOLD_SECONDS = 3.0             # keep playing this long after the last detected motion
 HOTPLUG_CHECK_INTERVAL = 3.0   # how often the parent re-checks the display list
 
+# Power management.
+IDLE_TIMEOUT_SECONDS = 60 * 60  # turn the display off after this many seconds of no motion
+POWER_ON_DELAY_MS = 1500        # show black for this long after waking, before video
+
 # Video file shown on motion. If missing or unreadable, falls back to a red
 # fullscreen — same triggering behavior as before.
 VIDEO_PATH = pathlib.Path(__file__).resolve().parent.parent / "video.mp4"
@@ -25,6 +31,14 @@ VIDEO_PATH = pathlib.Path(__file__).resolve().parent.parent / "video.mp4"
 DISPLAY_PIN_MAP = {
     0: 4,
     1: 17,
+}
+
+# Display index → Wayland output name (for wlr-randr power control).
+# Pi 4 with KMS uses HDMI-A-1 / HDMI-A-2 by default. If your outputs are named
+# differently (check `wlr-randr` on the Pi), adjust here.
+DISPLAY_OUTPUT_NAMES = {
+    0: "HDMI-A-1",
+    1: "HDMI-A-2",
 }
 
 BLACK = (0, 0, 0)
@@ -48,14 +62,40 @@ def _try_load_video():
     return cv2, fps
 
 
+def _set_display_power(output_name: str, on: bool) -> bool:
+    """Turn a Wayland output on or off via wlr-randr. Returns True on success."""
+    try:
+        result = subprocess.run(
+            ["wlr-randr", "--output", output_name, "--on" if on else "--off"],
+            timeout=5,
+            capture_output=True,
+            text=True,
+        )
+        return result.returncode == 0
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return False
+
+
 def control_display(display_index: int, pir_pin: int) -> None:
     """Drive a fullscreen window on `display_index` from the PIR on `pir_pin`."""
     prefix = f"[d{display_index}/gpio{pir_pin}]"
+    output_name = DISPLAY_OUTPUT_NAMES.get(display_index)
+    power_mgmt_ok = (
+        output_name is not None and shutil.which("wlr-randr") is not None
+    )
 
     cv2, video_fps = _try_load_video()
     mode = "video" if cv2 is not None else "red"
     frame_interval = (1.0 / video_fps) if video_fps else 1.0 / 30
     cap = None
+
+    showing_motion = False
+    power_state = "on"        # "on" or "off"
+    waking_until = None       # monotonic ts when the wake delay ends, or None
+    last_motion_time = None
+    last_pir_poll = 0.0
+    next_frame_time = 0.0
+    boot_time = time.monotonic()  # treat boot as the last "activity" for idle timing
 
     try:
         GPIO.setmode(GPIO.BCM)
@@ -81,12 +121,17 @@ def control_display(display_index: int, pir_pin: int) -> None:
         screen.fill(BLACK)
         pygame.display.flip()
 
-        print(f"{prefix} ready (mode={mode})", flush=True)
-
-        showing_motion = False
-        last_motion_time = None
-        last_pir_poll = 0.0
-        next_frame_time = 0.0
+        print(
+            f"{prefix} ready (mode={mode}, "
+            f"power_mgmt={'on' if power_mgmt_ok else 'unavailable'})",
+            flush=True,
+        )
+        if not power_mgmt_ok:
+            print(
+                f"{prefix} wlr-randr missing or no output mapping; "
+                f"display will stay powered on",
+                flush=True,
+            )
 
         while True:
             for event in pygame.event.get():
@@ -100,7 +145,7 @@ def control_display(display_index: int, pir_pin: int) -> None:
 
             now = time.monotonic()
 
-            # 1. Poll the PIR at POLL_INTERVAL cadence (slower than the render loop).
+            # 1. Poll the PIR at POLL_INTERVAL cadence.
             if now - last_pir_poll >= POLL_INTERVAL:
                 motion = GPIO.input(pir_pin)
                 if motion:
@@ -112,14 +157,71 @@ def control_display(display_index: int, pir_pin: int) -> None:
                     remaining = HOLD_SECONDS - (now - last_motion_time)
                     if remaining > 0:
                         hold = f"{remaining:4.1f}s"
-                state_label = (mode.upper() if showing_motion else "BLACK")
+
+                if power_state == "off":
+                    state_label = "OFF"
+                elif waking_until is not None:
+                    state_label = "WAKE"
+                elif showing_motion:
+                    state_label = mode.upper()
+                else:
+                    state_label = "BLACK"
+
                 stamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
                 print(
                     f"{stamp} {prefix} raw={motion} {state_label:<5} hold={hold}",
                     flush=True,
                 )
 
-            # 2. State transitions.
+            # 2. Determine target power state (on / off).
+            if power_mgmt_ok:
+                last_activity = last_motion_time if last_motion_time is not None else boot_time
+                target_power = (
+                    "off" if (now - last_activity) >= IDLE_TIMEOUT_SECONDS else "on"
+                )
+            else:
+                target_power = "on"
+
+            # 3. Apply power-state transitions.
+            if power_state == "on" and target_power == "off":
+                print(
+                    f"{prefix} idle for {IDLE_TIMEOUT_SECONDS}s → powering display off",
+                    flush=True,
+                )
+                if cap is not None:
+                    cap.release()
+                    cap = None
+                showing_motion = False
+                _set_display_power(output_name, False)
+                power_state = "off"
+                waking_until = None
+            elif power_state == "off" and target_power == "on":
+                print(f"{prefix} motion → powering display on", flush=True)
+                _set_display_power(output_name, True)
+                power_state = "on"
+                waking_until = now + (POWER_ON_DELAY_MS / 1000.0)
+                screen.fill(BLACK)
+                pygame.display.flip()
+
+            # 4. If display is off, idle — no rendering, no motion handling.
+            if power_state == "off":
+                time.sleep(0.2)
+                continue
+
+            # 5. If waking, keep showing black until the wake delay completes.
+            #    last_motion_time keeps updating from the PIR poll above, so by
+            #    the time we exit this phase the hold timer will still be valid
+            #    if motion is ongoing.
+            if waking_until is not None:
+                if now < waking_until:
+                    screen.fill(BLACK)
+                    pygame.display.flip()
+                    time.sleep(0.05)
+                    continue
+                waking_until = None
+                print(f"{prefix} wake delay complete", flush=True)
+
+            # 6. Normal motion → video/red transitions.
             should_show = (
                 last_motion_time is not None
                 and (now - last_motion_time) < HOLD_SECONDS
@@ -140,11 +242,10 @@ def control_display(display_index: int, pir_pin: int) -> None:
                 pygame.display.flip()
                 showing_motion = False
 
-            # 3. Render the next video frame, if it's time.
+            # 7. Render the next video frame, if it's time.
             if showing_motion and cap is not None and now >= next_frame_time:
                 ret, frame = cap.read()
                 if not ret:
-                    # End of video — loop back to frame 0.
                     cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
                     ret, frame = cap.read()
                 if ret:
@@ -157,7 +258,7 @@ def control_display(display_index: int, pir_pin: int) -> None:
                     pygame.display.flip()
                 next_frame_time = max(next_frame_time + frame_interval, now)
 
-            # 4. Sleep. Tight while playing video, lazy otherwise.
+            # 8. Sleep. Tight while playing video, lazy otherwise.
             if showing_motion and cap is not None:
                 time.sleep(max(0.0, min(next_frame_time - time.monotonic(), 0.05)))
             else:
@@ -165,6 +266,13 @@ def control_display(display_index: int, pir_pin: int) -> None:
     except KeyboardInterrupt:
         pass
     finally:
+        # Make sure we leave the display powered on so the user doesn't see a
+        # dark screen after the service stops.
+        if power_state == "off" and power_mgmt_ok:
+            try:
+                _set_display_power(output_name, True)
+            except Exception:
+                pass
         if cap is not None:
             try:
                 cap.release()
