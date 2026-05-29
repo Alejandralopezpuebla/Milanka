@@ -10,7 +10,7 @@ import RPi.GPIO as GPIO  # noqa: E402
 
 PIR_PIN = 4              # BCM pin number
 POLL_INTERVAL = 0.1      # seconds between readings
-HOLD_SECONDS = 5.0       # keep red this long after motion stops
+HOLD_SECONDS = 3.0       # keep red this long after motion stops
 
 BLACK = (0, 0, 0)
 RED = (255, 0, 0)
