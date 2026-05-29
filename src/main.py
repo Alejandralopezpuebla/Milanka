@@ -33,13 +33,21 @@ def control_display(display_index: int, pir_pin: int) -> None:
         GPIO.setup(pir_pin, GPIO.IN)
 
         pygame.init()
-        pygame.mouse.set_visible(False)
         screen = pygame.display.set_mode(
             (0, 0),
             pygame.FULLSCREEN | pygame.NOFRAME,
             display=display_index,
         )
         pygame.display.set_caption(f"milanka display {display_index}")
+
+        # Hide the cursor AFTER set_mode (some platforms reset it on surface
+        # creation). Belt and suspenders: also use a blank cursor image and
+        # park the pointer in the bottom-right corner.
+        pygame.mouse.set_visible(False)
+        blank = pygame.Surface((1, 1), pygame.SRCALPHA)
+        pygame.mouse.set_cursor(pygame.cursors.Cursor((0, 0), blank))
+        w, h = screen.get_size()
+        pygame.mouse.set_pos((w - 1, h - 1))
 
         current_color = None
         last_motion_time = None
