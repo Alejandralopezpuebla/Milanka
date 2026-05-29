@@ -57,6 +57,18 @@ After the reboot:
 - The systemd user service starts the app within a few seconds.
 - Both displays go black; PIRs control them edge-to-edge.
 
+### Video on motion
+
+Place a `video.mp4` in the repo root. When a PIR fires, the matching display switches from black to playing the video on a loop. When motion stops for `HOLD_SECONDS`, the screen returns to black; the next motion event restarts the video from frame 0.
+
+If `video.mp4` is missing (or unreadable), the app falls back to the original red-screen behavior — same triggering, just a flat red fullscreen instead of video.
+
+To swap the video, drop a new file at `/opt/Milanka/video.mp4` and restart the service:
+
+```bash
+systemctl --user restart milanka
+```
+
 ### Developing on macOS / non-Pi
 
 `init.sh` still works — steps 2 and 3 are skipped automatically (`/etc/rpi-issue` doesn't exist), so you just get a working `venv/` for editing code. To run the script locally for tests, activate the venv yourself:
@@ -102,8 +114,9 @@ milanka/
 ├── service/
 │   ├── milanka.service  # systemd user unit
 │   └── service.sh       # one-shot installer for the service
-├── init.sh              # Create + activate venv + install deps
+├── init.sh              # Install / configure (venv, labwc, service)
 ├── requirements.txt     # Python dependencies
+├── video.mp4            # Optional — played on motion (falls back to red if absent)
 ├── .gitignore
 └── README.md
 ```
