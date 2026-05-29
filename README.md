@@ -128,11 +128,13 @@ auto-restart on crash and no proper logging.
 ```
 milanka/
 ├── src/
-│   └── main.py          # Entry point
+│   ├── config.py        # Tunable constants (pins, timing, paths, colors)
+│   ├── display.py       # Per-display subprocess: motion → video/red, power off/on
+│   └── main.py          # Orchestrator: hot-plug watcher, signal handling
 ├── service/
 │   ├── milanka.service  # systemd user unit
 │   └── service.sh       # one-shot installer for the service
-├── init.sh              # Install / configure (venv, labwc, service)
+├── init.sh              # Install / configure (venv, labwc, wlr-randr, service)
 ├── requirements.txt     # Python dependencies
 ├── video.mp4            # Optional — played on motion (falls back to red if absent)
 ├── .gitignore
