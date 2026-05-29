@@ -7,9 +7,11 @@
 #
 # What it does:
 #   1. Creates ./venv and installs requirements.txt into it.
-#   2. On a Raspberry Pi only: configures labwc to hide the cursor
-#      (XCURSOR_SIZE=1 in ~/.config/labwc/environment).
-#   3. On a Raspberry Pi only: installs / refreshes the systemd user service
+#   2. On a Raspberry Pi only: installs wlr-randr (used to power displays off
+#      after an idle period).
+#   3. On a Raspberry Pi only: undoes the previously-added XCURSOR_SIZE=1 line
+#      in ~/.config/labwc/environment, if present.
+#   4. On a Raspberry Pi only: installs / refreshes the systemd user service
 #      that runs the app on every boot (delegates to service/service.sh).
 #
 # Then reboot the Pi:  sudo reboot
@@ -41,21 +43,7 @@ if [ -f requirements.txt ]; then
     "$VENV_DIR/bin/pip" install -r requirements.txt
 fi
 
-# 2. Pi-only: labwc cursor config
-needs_reboot=0
-if [ -f /etc/rpi-issue ]; then
-    LABWC_ENV="$HOME/.config/labwc/environment"
-    mkdir -p "$(dirname "$LABWC_ENV")"
-    if ! grep -qxF 'XCURSOR_SIZE=1' "$LABWC_ENV" 2>/dev/null; then
-        echo "Configuring labwc to hide the cursor (XCURSOR_SIZE=1)..."
-        echo 'XCURSOR_SIZE=1' >> "$LABWC_ENV"
-        needs_reboot=1
-    else
-        echo "labwc cursor config already in place."
-    fi
-fi
-
-# Pi-only: ensure wlr-randr is installed (used for display power management).
+# 2. Pi-only: ensure wlr-randr is installed (used for display power management).
 if [ -f /etc/rpi-issue ]; then
     if ! command -v wlr-randr >/dev/null 2>&1; then
         echo "Installing wlr-randr (sudo required, used for screen power-off)..."
@@ -66,7 +54,18 @@ if [ -f /etc/rpi-issue ]; then
     fi
 fi
 
-# 3. Pi-only: systemd user service
+# 3. Pi-only: undo the previously-added XCURSOR_SIZE=1 line if it's still
+# present from an older install. The app now lets the cursor stay visible.
+if [ -f /etc/rpi-issue ]; then
+    LABWC_ENV="$HOME/.config/labwc/environment"
+    if [ -f "$LABWC_ENV" ] && grep -qxF 'XCURSOR_SIZE=1' "$LABWC_ENV"; then
+        echo "Removing previously-added XCURSOR_SIZE=1 from $LABWC_ENV..."
+        grep -vxF 'XCURSOR_SIZE=1' "$LABWC_ENV" > "$LABWC_ENV.tmp"
+        mv "$LABWC_ENV.tmp" "$LABWC_ENV"
+    fi
+fi
+
+# 4. Pi-only: systemd user service
 if [ -f /etc/rpi-issue ] && [ -f service/service.sh ]; then
     echo "Installing / refreshing systemd user service..."
     bash service/service.sh
@@ -74,6 +73,3 @@ fi
 
 echo
 echo "Install complete."
-if [ "$needs_reboot" = "1" ]; then
-    echo "labwc configuration was updated. Reboot to apply: sudo reboot"
-fi

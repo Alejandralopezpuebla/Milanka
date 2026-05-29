@@ -77,6 +77,12 @@ def control_display(display_index: int, pir_pin: int) -> None:
     next_frame_time = 0.0
     boot_time = time.monotonic()  # treat boot as the last "activity" for idle timing
 
+    # ESC toggles to a 640x480 windowed mode with an overlay note. Quit (Q) is
+    # how you actually exit the subprocess (and systemd restarts it fullscreen).
+    windowed_mode = False
+    overlay_surface = None
+    overlay_pos = (0, 0)
+
     try:
         GPIO.setmode(GPIO.BCM)
         GPIO.setup(pir_pin, GPIO.IN)
@@ -98,8 +104,38 @@ def control_display(display_index: int, pir_pin: int) -> None:
         screen_size = screen.get_size()
         pygame.mouse.set_pos((screen_size[0] - 1, screen_size[1] - 1))
 
+        def present():
+            """Flip the back buffer, blitting the overlay on top if we're in windowed mode."""
+            if windowed_mode and overlay_surface is not None:
+                screen.blit(overlay_surface, overlay_pos)
+            pygame.display.flip()
+
+        def build_overlay(size):
+            """Pre-render the windowed-mode overlay: white text on a semi-transparent black box."""
+            pygame.font.init()
+            font = pygame.font.Font(None, 26)
+            lines = [
+                "Exit the application (Ctrl+Q) to restart",
+                "and enter fullscreen mode",
+            ]
+            text_surfaces = [font.render(line, True, (255, 255, 255)) for line in lines]
+            pad = 12
+            line_gap = 4
+            width = max(s.get_width() for s in text_surfaces) + 2 * pad
+            height = sum(s.get_height() for s in text_surfaces) + 2 * pad + line_gap * (len(lines) - 1)
+            # SRCALPHA so the background can be partially transparent — the
+            # underlying frame shows through, but text stays solid white.
+            surf = pygame.Surface((width, height), pygame.SRCALPHA)
+            surf.fill((0, 0, 0, 170))  # ~67% opaque black box
+            y = pad
+            for s in text_surfaces:
+                surf.blit(s, ((width - s.get_width()) // 2, y))
+                y += s.get_height() + line_gap
+            pos = ((size[0] - width) // 2, (size[1] - height) // 2)
+            return surf, pos
+
         screen.fill(BLACK)
-        pygame.display.flip()
+        present()
 
         print(
             f"{prefix} ready (mode={mode}, "
@@ -117,11 +153,29 @@ def control_display(display_index: int, pir_pin: int) -> None:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     return
-                if event.type == pygame.KEYDOWN and event.key in (
-                    pygame.K_ESCAPE,
-                    pygame.K_q,
-                ):
-                    return
+                if event.type == pygame.KEYDOWN:
+                    # Q or Ctrl+Q exits the subprocess (systemd restarts it
+                    # fullscreen). event.mod isn't checked: matching K_q alone
+                    # accepts plain Q, Ctrl+Q, Shift+Q, etc.
+                    if event.key == pygame.K_q:
+                        return
+                    if event.key == pygame.K_ESCAPE and not windowed_mode:
+                        # Switch to windowed mode (640x480) with overlay.
+                        print(f"{prefix} ESC → windowed mode 640x480", flush=True)
+                        windowed_mode = True
+                        if cap is not None:
+                            cap.release()
+                            cap = None
+                        showing_motion = False  # force redraw on next loop iteration
+                        screen = pygame.display.set_mode(
+                            (640, 480), display=display_index,
+                        )
+                        screen_size = screen.get_size()
+                        pygame.mouse.set_cursor(pygame.SYSTEM_CURSOR_ARROW)
+                        pygame.mouse.set_visible(True)
+                        overlay_surface, overlay_pos = build_overlay(screen_size)
+                        screen.fill(BLACK)
+                        present()
 
             now = time.monotonic()
 
@@ -181,7 +235,7 @@ def control_display(display_index: int, pir_pin: int) -> None:
                 power_state = "on"
                 waking_until = now + (POWER_ON_DELAY_MS / 1000.0)
                 screen.fill(BLACK)
-                pygame.display.flip()
+                present()
 
             # 4. If display is off, idle — no rendering, no motion handling.
             if power_state == "off":
@@ -195,7 +249,7 @@ def control_display(display_index: int, pir_pin: int) -> None:
             if waking_until is not None:
                 if now < waking_until:
                     screen.fill(BLACK)
-                    pygame.display.flip()
+                    present()
                     time.sleep(0.05)
                     continue
                 waking_until = None
@@ -212,14 +266,14 @@ def control_display(display_index: int, pir_pin: int) -> None:
                     next_frame_time = now
                 else:
                     screen.fill(RED)
-                    pygame.display.flip()
+                    present()
                 showing_motion = True
             elif not should_show and showing_motion:
                 if cap is not None:
                     cap.release()
                     cap = None
                 screen.fill(BLACK)
-                pygame.display.flip()
+                present()
                 showing_motion = False
 
             # 7. Render the next video frame, if it's time.
@@ -235,7 +289,7 @@ def control_display(display_index: int, pir_pin: int) -> None:
                     if (w, h) != screen_size:
                         surf = pygame.transform.scale(surf, screen_size)
                     screen.blit(surf, (0, 0))
-                    pygame.display.flip()
+                    present()
                 next_frame_time = max(next_frame_time + frame_interval, now)
 
             # 8. Sleep. Tight while playing video, lazy otherwise.

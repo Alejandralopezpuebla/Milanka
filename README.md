@@ -49,8 +49,8 @@ re-apply the labwc config.
 ### What `init.sh` does
 
 1. **Creates `./venv` and installs `requirements.txt` into it.**
-2. **(Pi only) Configures the cursor to be invisible** by appending `XCURSOR_SIZE=1` to `~/.config/labwc/environment`.
-   Skipped on macOS / non-Pi machines.
+2. **(Pi only) Installs `wlr-randr`** via apt, used by the app to power displays off after idle. Skipped on macOS /
+   non-Pi machines.
 3. **(Pi only) Installs the systemd user service** by running `service/service.sh`, which copies the unit to
    `~/.config/systemd/user/milanka.service`, calls `loginctl enable-linger`, and `enable`+`restart`s it.
 
@@ -85,6 +85,15 @@ The display-index → output-name mapping is `DISPLAY_OUTPUT_NAMES` in `src/conf
 (Pi 4 with KMS). Run `wlr-randr` on the Pi to confirm the names if power-off isn't working.
 
 If `wlr-randr` isn't installed, the app skips power management and logs a notice — the rest still works.
+
+### Keyboard
+
+- **ESC** — switch the display from fullscreen to a 640×480 window with an overlay reading
+  `Exit the application (Ctrl+Q) to restart and enter fullscreen mode`. The motion → video/red logic keeps running
+  inside the small window. There's no way back to fullscreen except by exiting the subprocess (which systemd restarts
+  in fullscreen).
+- **Q** / **Ctrl+Q** — exit the subprocess. With `Restart=always` on the unit, systemd will restart the service within
+  a few seconds, re-entering fullscreen.
 
 ### Auto-update
 
