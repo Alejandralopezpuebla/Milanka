@@ -9,7 +9,7 @@ import pygame  # noqa: E402
 import RPi.GPIO as GPIO  # noqa: E402
 
 PIR_PIN = 4              # BCM pin number
-POLL_INTERVAL = 0.1      # seconds between readings
+POLL_INTERVAL = 0.5      # seconds between readings
 HOLD_SECONDS = 3.0       # keep red this long after motion stops
 
 BLACK = (0, 0, 0)
