@@ -43,16 +43,21 @@ cd /opt/Milanka
 sudo reboot
 ```
 
-That's it. `install.sh` is idempotent — re-run it any time you bump dependencies, change the service unit, or want to
-re-apply the labwc config.
+That's it. `install.sh` is idempotent — re-run it any time you bump dependencies, change the service unit, or just
+want to confirm the Pi is in the expected state.
 
 ### What `install.sh` does
 
-1. **Creates `./venv` and installs `requirements.txt` into it.**
-2. **(Pi only) Installs `wlr-randr`** via apt, used by the app to power displays off after idle. Skipped on macOS /
-   non-Pi machines.
-3. **(Pi only) Installs the systemd user service** by running `service/service.sh`, which copies the unit to
-   `~/.config/systemd/user/milanka.service`, calls `loginctl enable-linger`, and `enable`+`restart`s it.
+1. **Creates `./venv` and installs `requirements.txt` into it.** Runs everywhere.
+2. **(Pi only) Installs `wlr-randr`** via apt, used by the app to power displays off after idle.
+3. **(Pi only) Removes a stale `XCURSOR_SIZE=1` line** from `~/.config/labwc/environment` if a previous version of
+   this installer left one there. The app now lets the cursor stay visible (needed for the windowed-mode introduced
+   with ESC), so this earlier hack is no longer wanted.
+4. **Ensures `videos/` exists**, and **(Pi only) creates a Desktop shortcut** named `milanka-videos` pointing at the
+   folder so clips can be dropped in via the file manager.
+5. **(Pi only) Installs / refreshes the systemd user service** by running `service/service.sh`, which copies the unit
+   to `~/.config/systemd/user/milanka.service`, calls `loginctl enable-linger`, runs `daemon-reload`+`enable`, and
+   restarts the service (unless `MILANKA_SKIP_SERVICE_RESTART=1` is set — used by the auto-updater).
 
 After the reboot:
 
@@ -123,8 +128,9 @@ set `UPDATE_CHECK_INTERVAL = 0` in `src/config.py`.
 
 ### Developing on macOS / non-Pi
 
-`install.sh` still works — steps 2 and 3 are skipped automatically (`/etc/rpi-issue` doesn't exist), so you just get a
-working `venv/` for editing code. To run the script locally for tests, activate the venv yourself:
+`install.sh` still works — all the Pi-only steps are skipped automatically (the script checks for `/etc/rpi-issue`),
+so you just get a working `venv/` and an empty `videos/` folder. To run the script locally for tests, activate the
+venv yourself:
 
 ```bash
 ./install.sh
