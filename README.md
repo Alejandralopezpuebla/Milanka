@@ -40,11 +40,10 @@ One script does everything. On the Pi, from the repo root:
 ```bash
 cd /opt/Milanka
 ./install.sh
-sudo reboot
 ```
 
-That's it. `install.sh` is idempotent — re-run it any time you bump dependencies, change the service unit, or just
-want to confirm the Pi is in the expected state.
+That's it. The service starts right at the end of the script — no reboot needed. `install.sh` is idempotent — re-run
+it any time you bump dependencies, change the service unit, or just want to confirm the Pi is in the expected state.
 
 ### What `install.sh` does
 

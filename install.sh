@@ -16,7 +16,6 @@
 #   5. On a Raspberry Pi only: installs / refreshes the systemd user service
 #      that runs the app on every boot (delegates to service/service.sh).
 #
-# Then reboot the Pi:  sudo reboot
 # Re-running is safe — every step is idempotent.
 
 set -euo pipefail
