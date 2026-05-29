@@ -23,7 +23,7 @@ if [ ! -f "$SERVICE_SRC" ]; then
 fi
 
 if [ ! -x "$REPO_DIR/venv/bin/python" ]; then
-    echo "Virtualenv not found at $REPO_DIR/venv. Run 'source init.sh' first." >&2
+    echo "Virtualenv not found at $REPO_DIR/venv. Run './install.sh' first." >&2
     exit 1
 fi
 
@@ -36,7 +36,16 @@ loginctl enable-linger "$USER" >/dev/null 2>&1 || true
 
 systemctl --user daemon-reload
 systemctl --user enable milanka.service
-systemctl --user restart milanka.service
+
+# When the auto-updater calls install.sh from inside the running service it
+# sets MILANKA_SKIP_SERVICE_RESTART=1 — restarting from here would SIGTERM our
+# own running process mid-install. The auto-updater calls sys.exit(0) itself,
+# and systemd's Restart=always picks the new unit up.
+if [ "${MILANKA_SKIP_SERVICE_RESTART:-}" = "1" ]; then
+    echo "MILANKA_SKIP_SERVICE_RESTART=1 set; skipping 'systemctl restart' (caller will exit)."
+else
+    systemctl --user restart milanka.service
+fi
 
 echo
 echo "milanka.service installed, enabled, and running."

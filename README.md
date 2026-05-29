@@ -71,8 +71,8 @@ flat red fullscreen instead of video.
 
 #### Swapping the video on the Pi
 
-`install.sh` creates a Desktop shortcut named **`milanka-videos`** pointing to the videos folder. Double-click it from the
-Pi's desktop to open the folder in the file manager, then drag your new clip in, renaming it to `milanka.mp4`
+`install.sh` creates a Desktop shortcut named **`milanka-videos`** pointing to the videos folder. Double-click it from
+the Pi's desktop to open the folder in the file manager, then drag your new clip in, renaming it to `milanka.mp4`
 (replacing the existing one if any). Restart the service for the new video to be picked up:
 
 ```bash
@@ -108,10 +108,15 @@ If `wlr-randr` isn't installed, the app skips power management and logs a notice
 ### Auto-update
 
 Every `UPDATE_CHECK_INTERVAL` seconds (default 3600 = 1 hour) the parent process runs `git fetch`. If the upstream
-branch has new commits, it does `git pull --ff-only` and exits — systemd then restarts the service with the new code
-(thanks to `Restart=always` in the unit). If there's no internet, the fetch fails silently and the loop keeps running;
-the next check happens an hour later.
+branch has new commits, it does `git pull --ff-only`, then re-runs `install.sh` to pick up any new dependencies or
+unit-file changes, and finally exits — systemd then restarts the service with the new code (thanks to `Restart=always`
+in the unit).
 
+To avoid SIGTERM-ing the running service while `install.sh` is still working, the auto-updater sets
+`MILANKA_SKIP_SERVICE_RESTART=1` in `install.sh`'s env. The downstream `service/service.sh` notices the flag and skips
+its own `systemctl --user restart`, leaving the restart to happen via the auto-updater's clean `sys.exit(0)`.
+
+If there's no internet, the fetch fails silently and the loop keeps running; the next check happens an hour later.
 Local edits that block a fast-forward (uncommitted changes or diverged history) cause the pull to fail loudly in the
 journal; the service keeps running on the old code until the conflict is resolved. To disable auto-update entirely,
 set `UPDATE_CHECK_INTERVAL = 0` in `src/config.py`.
@@ -129,7 +134,8 @@ python src/main.py    # will fail on import RPi.GPIO unless you mock it
 
 ## Run on boot (systemd user service)
 
-`install.sh` already installs this; this section is reference for what the service does and how to manage it after install.
+`install.sh` already installs this; this section is reference for what the service does and how to manage it after
+install.
 
 ### Managing it afterwards
 

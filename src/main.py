@@ -82,6 +82,39 @@ def check_for_updates() -> bool:
     return True
 
 
+def run_post_update_install() -> None:
+    """Re-run install.sh so any new requirements / unit file changes are applied.
+
+    MILANKA_SKIP_SERVICE_RESTART is set so service.sh skips its `systemctl restart`
+    — we'll exit shortly and systemd's Restart=always will pick up the new code
+    (and the new unit, since daemon-reload was already done).
+    """
+    install_script = REPO_DIR / "install.sh"
+    if not install_script.exists():
+        print("install.sh not found; skipping post-update install.", flush=True)
+        return
+    env = os.environ.copy()
+    env["MILANKA_SKIP_SERVICE_RESTART"] = "1"
+    print("Running install.sh to apply post-update changes...", flush=True)
+    try:
+        result = subprocess.run(
+            ["bash", str(install_script)],
+            cwd=str(REPO_DIR),
+            env=env,
+            timeout=300,
+        )
+        if result.returncode != 0:
+            print(
+                f"install.sh exited with code {result.returncode}; "
+                f"continuing anyway, the restart may pick up partial state",
+                flush=True,
+            )
+    except subprocess.TimeoutExpired:
+        print("install.sh timed out after 300s; continuing.", flush=True)
+    except OSError as e:
+        print(f"install.sh could not be launched: {e}", flush=True)
+
+
 def spawn_controller(display_index: int) -> mp.Process:
     pin = DISPLAY_PIN_MAP[display_index]
     p = mp.Process(
@@ -133,15 +166,17 @@ def main() -> None:
     last_update_check = time.monotonic()  # first check happens UPDATE_CHECK_INTERVAL from now
 
     while not shutting_down:
-        # 0. Auto-update: if upstream advanced, pull and exit so systemd restarts us.
+        # 0. Auto-update: if upstream advanced, pull, re-run install.sh to pick
+        # up any dep/unit changes, then exit so systemd restarts us cleanly.
         if (
             UPDATE_CHECK_INTERVAL > 0
             and time.monotonic() - last_update_check >= UPDATE_CHECK_INTERVAL
         ):
             last_update_check = time.monotonic()
             if check_for_updates():
+                run_post_update_install()
                 print(
-                    "Updates pulled; exiting so systemd restarts with the new code.",
+                    "Exiting so systemd restarts the service with the new code.",
                     flush=True,
                 )
                 for p in procs.values():
