@@ -18,8 +18,10 @@ UPDATE_CHECK_INTERVAL = 3600    # seconds between `git fetch` checks (0 disables
 REPO_DIR = pathlib.Path(__file__).resolve().parent.parent
 
 # Video file shown on motion. If missing or unreadable, the app falls back to a
-# red fullscreen with identical triggering.
-VIDEO_PATH = REPO_DIR / "video.mp4"
+# red fullscreen with identical triggering. The videos/ folder is git-ignored
+# (except for .gitkeep) so users can drop their own clips in without polluting
+# the repo. init.sh creates a Desktop symlink to this folder on the Pi.
+VIDEO_PATH = REPO_DIR / "videos" / "milanka.mp4"
 
 # Display index → PIR pin (BCM numbering).
 #   Display 0 ← PIR on GPIO 4  (physical pin 7)

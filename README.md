@@ -39,14 +39,14 @@ One script does everything. On the Pi, from the repo root:
 
 ```bash
 cd /opt/Milanka
-./init.sh
+./install.sh
 sudo reboot
 ```
 
-That's it. `init.sh` is idempotent — re-run it any time you bump dependencies, change the service unit, or want to
+That's it. `install.sh` is idempotent — re-run it any time you bump dependencies, change the service unit, or want to
 re-apply the labwc config.
 
-### What `init.sh` does
+### What `install.sh` does
 
 1. **Creates `./venv` and installs `requirements.txt` into it.**
 2. **(Pi only) Installs `wlr-randr`** via apt, used by the app to power displays off after idle. Skipped on macOS /
@@ -62,18 +62,28 @@ After the reboot:
 
 ### Video on motion
 
-Place a `video.mp4` in the repo root. When a PIR fires, the matching display switches from black to playing the video on
-a loop. When motion stops for `HOLD_SECONDS`, the screen returns to black; the next motion event restarts the video from
-frame 0.
+The app expects `videos/milanka.mp4` in the repo (so `/opt/Milanka/videos/milanka.mp4` on the Pi). When a PIR fires,
+the matching display switches from black to playing the video on a loop. When motion stops for `HOLD_SECONDS`, the
+screen returns to black; the next motion event restarts the video from frame 0.
 
-If `video.mp4` is missing (or unreadable), the app falls back to the original red-screen behavior — same triggering,
-just a flat red fullscreen instead of video.
+If `videos/milanka.mp4` is missing or unreadable, the app falls back to red-screen behavior — same triggering, just a
+flat red fullscreen instead of video.
 
-To swap the video, drop a new file at `/opt/Milanka/video.mp4` and restart the service:
+#### Swapping the video on the Pi
+
+`install.sh` creates a Desktop shortcut named **`milanka-videos`** pointing to the videos folder. Double-click it from the
+Pi's desktop to open the folder in the file manager, then drag your new clip in, renaming it to `milanka.mp4`
+(replacing the existing one if any). Restart the service for the new video to be picked up:
 
 ```bash
 systemctl --user restart milanka
 ```
+
+#### Why `videos/` is git-ignored
+
+The folder itself is tracked (via an empty `.gitkeep` placeholder), but everything inside it is excluded by
+`.gitignore` — large `.mp4` files shouldn't bloat the repository. That means `git pull` won't overwrite or remove the
+clip you've dropped in.
 
 ### Power saving
 
@@ -108,18 +118,18 @@ set `UPDATE_CHECK_INTERVAL = 0` in `src/config.py`.
 
 ### Developing on macOS / non-Pi
 
-`init.sh` still works — steps 2 and 3 are skipped automatically (`/etc/rpi-issue` doesn't exist), so you just get a
+`install.sh` still works — steps 2 and 3 are skipped automatically (`/etc/rpi-issue` doesn't exist), so you just get a
 working `venv/` for editing code. To run the script locally for tests, activate the venv yourself:
 
 ```bash
-./init.sh
+./install.sh
 source venv/bin/activate
 python src/main.py    # will fail on import RPi.GPIO unless you mock it
 ```
 
 ## Run on boot (systemd user service)
 
-`init.sh` already installs this; this section is reference for what the service does and how to manage it after install.
+`install.sh` already installs this; this section is reference for what the service does and how to manage it after install.
 
 ### Managing it afterwards
 
@@ -154,9 +164,10 @@ milanka/
 ├── service/
 │   ├── milanka.service  # systemd user unit
 │   └── service.sh       # one-shot installer for the service
-├── init.sh              # Install / configure (venv, labwc, wlr-randr, service)
+├── videos/              # Drop milanka.mp4 here (git-ignored, except for .gitkeep)
+│   └── .gitkeep
+├── install.sh           # Install / configure (venv, wlr-randr, videos symlink, service)
 ├── requirements.txt     # Python dependencies
-├── video.mp4            # Optional — played on motion (falls back to red if absent)
 ├── .gitignore
 └── README.md
 ```

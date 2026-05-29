@@ -32,3 +32,7 @@ Thumbs.db
 # Environment variables
 .env
 .env.local
+
+# Video clips dropped in by users — directory tracked, contents are not.
+videos/*
+!videos/.gitkeep

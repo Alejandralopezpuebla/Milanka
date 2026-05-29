@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # milanka installer.
 # Run once on a fresh Raspberry Pi after cloning the repo:
-#     ./init.sh
+#     ./install.sh
 #   or
-#     bash init.sh
+#     bash install.sh
 #
 # What it does:
 #   1. Creates ./venv and installs requirements.txt into it.
@@ -11,7 +11,9 @@
 #      after an idle period).
 #   3. On a Raspberry Pi only: undoes the previously-added XCURSOR_SIZE=1 line
 #      in ~/.config/labwc/environment, if present.
-#   4. On a Raspberry Pi only: installs / refreshes the systemd user service
+#   4. Ensures the videos/ folder exists, and (Pi only) creates a Desktop
+#      symlink so users can drop clips via the file manager.
+#   5. On a Raspberry Pi only: installs / refreshes the systemd user service
 #      that runs the app on every boot (delegates to service/service.sh).
 #
 # Then reboot the Pi:  sudo reboot
@@ -65,7 +67,22 @@ if [ -f /etc/rpi-issue ]; then
     fi
 fi
 
-# 4. Pi-only: systemd user service
+# 4. Videos folder + Desktop shortcut.
+mkdir -p "$REPO_DIR/videos"
+if [ -f /etc/rpi-issue ]; then
+    DESKTOP_DIR="$HOME/Desktop"
+    mkdir -p "$DESKTOP_DIR"
+    LINK="$DESKTOP_DIR/milanka-videos"
+    # ln -sfn: -s symlink, -f force replace, -n don't dereference if it's already a symlink to a dir.
+    if [ ! -L "$LINK" ] || [ "$(readlink "$LINK")" != "$REPO_DIR/videos" ]; then
+        echo "Creating Desktop shortcut: $LINK → $REPO_DIR/videos"
+        ln -sfn "$REPO_DIR/videos" "$LINK"
+    else
+        echo "Desktop shortcut already in place."
+    fi
+fi
+
+# 5. Pi-only: systemd user service
 if [ -f /etc/rpi-issue ] && [ -f service/service.sh ]; then
     echo "Installing / refreshing systemd user service..."
     bash service/service.sh
