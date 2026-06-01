@@ -61,18 +61,21 @@ fi
 # 3. Pi-only: clean up cursor-hiding artefacts from older installer versions.
 # Cursor hiding is now done by the app itself, via SDL_VIDEODRIVER=x11 in the
 # systemd unit (forces Xwayland so labwc honors pygame's mouse-hide request).
+# Note: `grep -v` returns 1 when every line matched and was filtered out;
+# combined with set -e that would abort the whole installer, so each filtered
+# write is guarded with `|| true`.
 if [ -f /etc/rpi-issue ]; then
     LABWC_ENV="$HOME/.config/labwc/environment"
     if [ -f "$LABWC_ENV" ] && grep -qxF 'XCURSOR_SIZE=1' "$LABWC_ENV"; then
         echo "Removing stale XCURSOR_SIZE=1 from $LABWC_ENV..."
-        grep -vxF 'XCURSOR_SIZE=1' "$LABWC_ENV" > "$LABWC_ENV.tmp"
+        grep -vxF 'XCURSOR_SIZE=1' "$LABWC_ENV" > "$LABWC_ENV.tmp" || true
         mv "$LABWC_ENV.tmp" "$LABWC_ENV"
     fi
 
     AUTOSTART="$HOME/.config/labwc/autostart"
     if [ -f "$AUTOSTART" ] && grep -q '^unclutter' "$AUTOSTART"; then
         echo "Removing stale unclutter line from $AUTOSTART..."
-        grep -v '^unclutter' "$AUTOSTART" > "$AUTOSTART.tmp"
+        grep -v '^unclutter' "$AUTOSTART" > "$AUTOSTART.tmp" || true
         mv "$AUTOSTART.tmp" "$AUTOSTART"
     fi
 fi
