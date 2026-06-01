@@ -22,6 +22,7 @@ from config import (  # noqa: E402
     POLL_INTERVAL,
     POWER_ON_DELAY_MS,
     RED,
+    VERBOSE_LOGGING,
     VIDEO_PATH,
 )
 
@@ -167,6 +168,7 @@ def control_display(display_index: int, pir_pin: int) -> None:
     last_cursor_park = 0.0    # last time we warped the cursor to the corner
     next_frame_time = 0.0
     boot_time = time.monotonic()  # treat boot as the last "activity" for idle timing
+    prev_state_label = None  # tracks the last logged state so we only print on change
 
     # ESC toggles to a 640x480 windowed mode with an overlay note. Quit (Q) is
     # how you actually exit the subprocess (and systemd restarts it fullscreen).
@@ -280,18 +282,14 @@ def control_display(display_index: int, pir_pin: int) -> None:
                 pygame.mouse.set_pos((screen_size[0] - 1, screen_size[1] - 1))
                 last_cursor_park = now
 
-            # 1. Poll the PIR at POLL_INTERVAL cadence.
+            # 1. Poll the PIR at POLL_INTERVAL cadence. Logging is gated on
+            # state changes to keep the journal compact over long runs — set
+            # VERBOSE_LOGGING in config.py to re-enable per-poll output.
             if now - last_pir_poll >= POLL_INTERVAL:
                 motion = GPIO.input(pir_pin)
                 if motion:
                     last_motion_time = now
                 last_pir_poll = now
-
-                hold = "-"
-                if last_motion_time is not None:
-                    remaining = HOLD_SECONDS - (now - last_motion_time)
-                    if remaining > 0:
-                        hold = f"{remaining:4.1f}s"
 
                 if power_state == "off":
                     state_label = "OFF"
@@ -302,11 +300,18 @@ def control_display(display_index: int, pir_pin: int) -> None:
                 else:
                     state_label = "BLACK"
 
-                stamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
-                print(
-                    f"{stamp} {prefix} raw={motion} {state_label:<5} hold={hold}",
-                    flush=True,
-                )
+                if VERBOSE_LOGGING or state_label != prev_state_label:
+                    hold = "-"
+                    if last_motion_time is not None:
+                        remaining = HOLD_SECONDS - (now - last_motion_time)
+                        if remaining > 0:
+                            hold = f"{remaining:4.1f}s"
+                    stamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+                    print(
+                        f"{stamp} {prefix} raw={motion} {state_label:<5} hold={hold}",
+                        flush=True,
+                    )
+                    prev_state_label = state_label
 
             # 2. Determine target power state (on / off).
             if power_mgmt_ok:

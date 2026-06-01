@@ -53,11 +53,13 @@ it any time you bump dependencies, change the service unit, or just want to conf
    `~/.config/labwc/environment`, and any `unclutter` line in `~/.config/labwc/autostart`). The cursor is now
    hidden entirely from the app: the systemd unit sets `SDL_VIDEODRIVER=x11` to force pygame through Xwayland,
    which labwc honors when the app calls `pygame.mouse.set_visible(False)`.
-4. **Ensures `videos/` exists**, and **(Pi only) writes two Desktop shortcuts**:
+4. **(Pi only) Caps `systemd-journald`** to 100 MB / 10 rotated files via a drop-in at
+   `/etc/systemd/journald.conf.d/milanka.conf`. Prevents the SD card from slowly filling over multi-year runs.
+5. **Ensures `videos/` exists**, and **(Pi only) writes two Desktop shortcuts**:
    - `milanka-videos` — a symlink to the videos folder, so clips can be dropped in via the file manager.
    - `Milanka Terminal` — a launcher that opens `lxterminal` already `cd`'d into `/opt/Milanka`, handy for running
      `git pull`, `sudo journalctl _SYSTEMD_USER_UNIT=milanka.service`, etc. without typing the path.
-5. **(Pi only) Installs / refreshes the systemd user service** by running `service/service.sh`, which copies the unit
+6. **(Pi only) Installs / refreshes the systemd user service** by running `service/service.sh`, which copies the unit
    to `~/.config/systemd/user/milanka.service`, calls `loginctl enable-linger`, runs `daemon-reload`+`enable`, and
    restarts the service (unless `MILANKA_SKIP_SERVICE_RESTART=1` is set — used by the auto-updater).
 
@@ -124,6 +126,17 @@ If `wlr-randr` isn't installed, the app skips power management and logs a notice
   in fullscreen).
 - **Q** / **Ctrl+Q** — exit the subprocess. With `Restart=always` on the unit, systemd will restart the service within
   a few seconds, re-entering fullscreen.
+
+### Logging
+
+The app keeps the journal small for long-running deployments:
+
+- **State-change-only logging**: per-poll PIR readings (`raw=0 BLACK hold=-`) are only printed when the screen state
+  changes (BLACK → VIDEO, hold expires → BLACK, power-off, wake-complete, etc.). Set `VERBOSE_LOGGING = True` in
+  `src/config.py` to re-enable the per-poll line when you need to debug the sensor.
+- **Journald cap**: `install.sh` writes `/etc/systemd/journald.conf.d/milanka.conf` which caps the system journal at
+  100 MB across at most 10 rotated files. The Pi will never run out of disk space because of logs, regardless of
+  how long the service runs.
 
 ### Auto-update
 

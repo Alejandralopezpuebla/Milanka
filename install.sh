@@ -13,10 +13,13 @@
 #      installer versions (XCURSOR_SIZE=1 in labwc/environment, and the
 #      unclutter line in labwc/autostart). Cursor hiding is now done entirely
 #      from the app — see SDL_VIDEODRIVER=x11 in service/milanka.service.
-#   4. Ensures the videos/ folder exists, and (Pi only) creates two Desktop
+#   4. On a Raspberry Pi only: caps systemd-journald to 100 MB / 10 rotated
+#      files via /etc/systemd/journald.conf.d/milanka.conf, so a multi-year
+#      run can't slowly fill the SD card.
+#   5. Ensures the videos/ folder exists, and (Pi only) creates two Desktop
 #      shortcuts: a 'milanka-videos' symlink to the videos folder, and a
 #      'Milanka Terminal' launcher that opens lxterminal in /opt/Milanka.
-#   5. On a Raspberry Pi only: installs / refreshes the systemd user service
+#   6. On a Raspberry Pi only: installs / refreshes the systemd user service
 #      that runs the app on every boot (delegates to service/service.sh).
 #
 # Re-running is safe — every step is idempotent.
@@ -80,13 +83,36 @@ if [ -f /etc/rpi-issue ]; then
     fi
 fi
 
-# 4. Videos folder + Desktop shortcuts (videos symlink + terminal launcher).
+# 4. Pi-only: cap systemd-journald disk usage to 100 MB / 10 rotated files so
+# the SD card doesn't slowly fill up over a multi-year deployment, and we get
+# fewer rotation events (less SD-card wear). Idempotent: only writes the
+# drop-in and reloads journald if the file isn't already as we want it.
+if [ -f /etc/rpi-issue ]; then
+    JOURNALD_DROPIN=/etc/systemd/journald.conf.d/milanka.conf
+    desired_journal_conf=$(cat <<'EOF'
+[Journal]
+SystemMaxUse=100M
+SystemMaxFiles=10
+EOF
+)
+    if [ ! -f "$JOURNALD_DROPIN" ] || ! diff -q <(printf '%s\n' "$desired_journal_conf") "$JOURNALD_DROPIN" >/dev/null 2>&1; then
+        echo "Capping journald to 100 MB at $JOURNALD_DROPIN..."
+        sudo mkdir -p "$(dirname "$JOURNALD_DROPIN")"
+        printf '%s\n' "$desired_journal_conf" | sudo tee "$JOURNALD_DROPIN" >/dev/null
+        sudo systemctl kill --kill-who=main --signal=SIGUSR2 systemd-journald 2>/dev/null || true
+        sudo systemctl restart systemd-journald 2>/dev/null || true
+    else
+        echo "journald cap already in place."
+    fi
+fi
+
+# 5. Videos folder + Desktop shortcuts (videos symlink + terminal launcher).
 mkdir -p "$REPO_DIR/videos"
 if [ -f /etc/rpi-issue ]; then
     DESKTOP_DIR="$HOME/Desktop"
     mkdir -p "$DESKTOP_DIR"
 
-    # 4a. Videos folder symlink.
+    # 5a. Videos folder symlink.
     LINK="$DESKTOP_DIR/milanka-videos"
     # ln -sfn: -s symlink, -f force replace, -n don't dereference if it's already a symlink to a dir.
     if [ ! -L "$LINK" ] || [ "$(readlink "$LINK")" != "$REPO_DIR/videos" ]; then
@@ -96,7 +122,7 @@ if [ -f /etc/rpi-issue ]; then
         echo "Desktop videos shortcut already in place."
     fi
 
-    # 4b. Terminal launcher (opens lxterminal cd'd into the repo).
+    # 5b. Terminal launcher (opens lxterminal cd'd into the repo).
     TERM_LAUNCHER="$DESKTOP_DIR/milanka-terminal.desktop"
     cat > "$TERM_LAUNCHER" <<EOF
 [Desktop Entry]
@@ -112,7 +138,7 @@ EOF
     echo "Wrote Desktop launcher: $TERM_LAUNCHER"
 fi
 
-# 5. Pi-only: systemd user service
+# 6. Pi-only: systemd user service
 if [ -f /etc/rpi-issue ] && [ -f service/service.sh ]; then
     echo "Installing / refreshing systemd user service..."
     bash service/service.sh

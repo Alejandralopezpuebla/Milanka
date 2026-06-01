@@ -7,6 +7,11 @@ POLL_INTERVAL = 1.0             # seconds between PIR readings
 HOLD_SECONDS = 9.0              # keep playing this long after the last detected motion
 HOTPLUG_CHECK_INTERVAL = 3.0    # how often the parent re-checks the display list
 
+# Per-poll PIR readings are logged only on state changes by default (keeps the
+# journal small for long-running deployments). Set True to log every poll —
+# useful when debugging the sensor or the state machine.
+VERBOSE_LOGGING = False
+
 # Power management.
 IDLE_TIMEOUT_SECONDS = 60 * 60  # turn the display off after this many seconds of no motion
 POWER_ON_DELAY_MS = 1500        # show black for this long after waking, before video
