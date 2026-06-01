@@ -52,8 +52,10 @@ it any time you bump dependencies, change the service unit, or just want to conf
 3. **(Pi only) Removes a stale `XCURSOR_SIZE=1` line** from `~/.config/labwc/environment` if a previous version of
    this installer left one there. The app now lets the cursor stay visible (needed for the windowed-mode introduced
    with ESC), so this earlier hack is no longer wanted.
-4. **Ensures `videos/` exists**, and **(Pi only) creates a Desktop shortcut** named `milanka-videos` pointing at the
-   folder so clips can be dropped in via the file manager.
+4. **Ensures `videos/` exists**, and **(Pi only) writes two Desktop shortcuts**:
+   - `milanka-videos` — a symlink to the videos folder, so clips can be dropped in via the file manager.
+   - `Milanka Terminal` — a launcher that opens `lxterminal` already `cd`'d into `/opt/Milanka`, handy for running
+     `git pull`, `journalctl --user -u milanka`, etc. without typing the path.
 5. **(Pi only) Installs / refreshes the systemd user service** by running `service/service.sh`, which copies the unit
    to `~/.config/systemd/user/milanka.service`, calls `loginctl enable-linger`, runs `daemon-reload`+`enable`, and
    restarts the service (unless `MILANKA_SKIP_SERVICE_RESTART=1` is set — used by the auto-updater).

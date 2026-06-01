@@ -11,8 +11,9 @@
 #      after an idle period).
 #   3. On a Raspberry Pi only: undoes the previously-added XCURSOR_SIZE=1 line
 #      in ~/.config/labwc/environment, if present.
-#   4. Ensures the videos/ folder exists, and (Pi only) creates a Desktop
-#      symlink so users can drop clips via the file manager.
+#   4. Ensures the videos/ folder exists, and (Pi only) creates two Desktop
+#      shortcuts: a 'milanka-videos' symlink to the videos folder, and a
+#      'Milanka Terminal' launcher that opens lxterminal in /opt/Milanka.
 #   5. On a Raspberry Pi only: installs / refreshes the systemd user service
 #      that runs the app on every boot (delegates to service/service.sh).
 #
@@ -66,19 +67,36 @@ if [ -f /etc/rpi-issue ]; then
     fi
 fi
 
-# 4. Videos folder + Desktop shortcut.
+# 4. Videos folder + Desktop shortcuts (videos symlink + terminal launcher).
 mkdir -p "$REPO_DIR/videos"
 if [ -f /etc/rpi-issue ]; then
     DESKTOP_DIR="$HOME/Desktop"
     mkdir -p "$DESKTOP_DIR"
+
+    # 4a. Videos folder symlink.
     LINK="$DESKTOP_DIR/milanka-videos"
     # ln -sfn: -s symlink, -f force replace, -n don't dereference if it's already a symlink to a dir.
     if [ ! -L "$LINK" ] || [ "$(readlink "$LINK")" != "$REPO_DIR/videos" ]; then
         echo "Creating Desktop shortcut: $LINK → $REPO_DIR/videos"
         ln -sfn "$REPO_DIR/videos" "$LINK"
     else
-        echo "Desktop shortcut already in place."
+        echo "Desktop videos shortcut already in place."
     fi
+
+    # 4b. Terminal launcher (opens lxterminal cd'd into the repo).
+    TERM_LAUNCHER="$DESKTOP_DIR/milanka-terminal.desktop"
+    cat > "$TERM_LAUNCHER" <<EOF
+[Desktop Entry]
+Type=Application
+Name=Milanka Terminal
+Comment=Open a terminal in $REPO_DIR
+Exec=lxterminal --working-directory=$REPO_DIR
+Icon=utilities-terminal
+Terminal=false
+Categories=Utility;
+EOF
+    chmod +x "$TERM_LAUNCHER"
+    echo "Wrote Desktop launcher: $TERM_LAUNCHER"
 fi
 
 # 5. Pi-only: systemd user service
