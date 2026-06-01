@@ -48,7 +48,10 @@ it any time you bump dependencies, change the service unit, or just want to conf
 ### What `install.sh` does
 
 1. **Creates `./venv` and installs `requirements.txt` into it.** Runs everywhere.
-2. **(Pi only) Installs `wlr-randr`** via apt, used by the app to power displays off after idle.
+2. **(Pi only) Installs `wlr-randr` and `ydotool`** via apt, and enables `ydotoold` as a system service.
+   `wlr-randr` is used by the app to power displays off after idle. `ydotool` is used to warp the cursor into the
+   bottom-right corner periodically — `pygame.mouse.set_pos` doesn't work on labwc/Wayland, so we inject at the
+   kernel uinput layer instead.
 3. **(Pi only) Removes a stale `XCURSOR_SIZE=1` line** from `~/.config/labwc/environment` if a previous version of
    this installer left one there. The app now lets the cursor stay visible (needed for the windowed-mode introduced
    with ESC), so this earlier hack is no longer wanted.

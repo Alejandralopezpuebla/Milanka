@@ -69,6 +69,26 @@ def _try_load_video():
     return cv2, fps
 
 
+def _warp_cursor(x: int, y: int) -> bool:
+    """Move the cursor to (x, y) via ydotool — works on labwc/Wayland where
+    pygame.mouse.set_pos is a no-op. Returns True on success.
+
+    Requires the ydotool package installed and ydotoold running as a system
+    service (handled by install.sh). Falls through silently if either is
+    missing — the cursor just stays where it is.
+    """
+    try:
+        result = subprocess.run(
+            ["ydotool", "mousemove", "--absolute", "--", str(x), str(y)],
+            timeout=1,
+            capture_output=True,
+            text=True,
+        )
+        return result.returncode == 0
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return False
+
+
 def _list_wayland_outputs() -> list[str]:
     """Return the names of connected outputs in the order wlr-randr prints them.
 
@@ -187,13 +207,15 @@ def control_display(display_index: int, pir_pin: int) -> None:
         pygame.display.set_caption(f"milanka display {display_index}")
 
         # Hide the cursor AFTER set_mode (some platforms reset it on surface
-        # creation). Belt and suspenders: also use a blank cursor image and
-        # park the pointer in the bottom-right corner.
+        # creation) — on Wayland this is advisory and may be ignored, but on
+        # X11/Xwayland it works. Belt and suspenders: also assign a 1x1
+        # transparent cursor image. The real fallback for Wayland is ydotool,
+        # called periodically from the main loop below.
         pygame.mouse.set_visible(False)
         blank = pygame.Surface((1, 1), pygame.SRCALPHA)
         pygame.mouse.set_cursor(pygame.cursors.Cursor((0, 0), blank))
         screen_size = screen.get_size()
-        pygame.mouse.set_pos((screen_size[0] - 1, screen_size[1] - 1))
+        _warp_cursor(screen_size[0] - 1, screen_size[1] - 1)
 
         def present():
             """Flip the back buffer, blitting the overlay on top if we're in windowed mode."""
@@ -270,15 +292,14 @@ def control_display(display_index: int, pir_pin: int) -> None:
 
             now = time.monotonic()
 
-            # Keep parking the cursor in the bottom-right corner while we're in
-            # fullscreen. The single set_pos() right after set_mode() above can
-            # fail silently on Wayland if the window doesn't yet have pointer
-            # focus, and once the user moves the mouse the cursor would just
-            # stay wherever they left it. Re-warping every ~500 ms snaps it back
-            # to the corner as soon as focus is acquired and keeps it pinned.
-            # Skipped in windowed mode so the user can actually use the cursor.
-            if not windowed_mode and now - last_cursor_park >= 0.5:
-                pygame.mouse.set_pos((screen_size[0] - 1, screen_size[1] - 1))
+            # Park the cursor in the bottom-right corner while we're in
+            # fullscreen. On labwc/Wayland pygame.mouse.set_pos is silently
+            # ignored, so we shell out to ydotool which injects at the kernel
+            # uinput layer. Periodic re-warp covers (a) the initial window not
+            # having pointer focus yet, and (b) someone bumping a USB mouse.
+            # Skipped in windowed mode so the user can use the cursor normally.
+            if not windowed_mode and now - last_cursor_park >= 2.0:
+                _warp_cursor(screen_size[0] - 1, screen_size[1] - 1)
                 last_cursor_park = now
 
             # 1. Poll the PIR at POLL_INTERVAL cadence.
