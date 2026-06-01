@@ -55,7 +55,7 @@ it any time you bump dependencies, change the service unit, or just want to conf
 4. **Ensures `videos/` exists**, and **(Pi only) writes two Desktop shortcuts**:
    - `milanka-videos` — a symlink to the videos folder, so clips can be dropped in via the file manager.
    - `Milanka Terminal` — a launcher that opens `lxterminal` already `cd`'d into `/opt/Milanka`, handy for running
-     `git pull`, `sudo journalctl _UID=$(id -u milanka)`, etc. without typing the path.
+     `git pull`, `sudo journalctl _SYSTEMD_USER_UNIT=milanka.service`, etc. without typing the path.
 5. **(Pi only) Installs / refreshes the systemd user service** by running `service/service.sh`, which copies the unit
    to `~/.config/systemd/user/milanka.service`, calls `loginctl enable-linger`, runs `daemon-reload`+`enable`, and
    restarts the service (unless `MILANKA_SKIP_SERVICE_RESTART=1` is set — used by the auto-updater).
@@ -163,7 +163,7 @@ install.
 
 ```bash
 systemctl --user status milanka          # current state
-sudo journalctl _UID=$(id -u milanka) -f # follow logs (PIR readings, etc.)
+sudo journalctl _SYSTEMD_USER_UNIT=milanka.service -f  # follow logs (PIR readings, etc.)
 systemctl --user restart milanka         # restart, e.g. after editing main.py
 systemctl --user stop milanka            # stop without disabling
 systemctl --user disable milanka         # disable autostart

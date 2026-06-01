@@ -51,8 +51,8 @@ echo
 echo "milanka.service installed, enabled, and running."
 echo
 echo "Useful commands:"
-echo "  systemctl --user status milanka                  # current state"
-echo "  sudo journalctl _UID=\$(id -u $USER) -f           # follow logs"
-echo "  systemctl --user restart milanka                 # restart after edits"
-echo "  systemctl --user stop milanka                    # stop"
-echo "  systemctl --user disable milanka                 # remove from autostart"
+echo "  systemctl --user status milanka                            # current state"
+echo "  sudo journalctl _SYSTEMD_USER_UNIT=milanka.service -f      # follow logs"
+echo "  systemctl --user restart milanka                           # restart after edits"
+echo "  systemctl --user stop milanka                              # stop"
+echo "  systemctl --user disable milanka                           # remove from autostart"
