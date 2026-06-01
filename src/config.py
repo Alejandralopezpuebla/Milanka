@@ -8,7 +8,7 @@ HOLD_SECONDS = 9.0             # keep playing this long after the last detected 
 HOTPLUG_CHECK_INTERVAL = 3.0   # how often the parent re-checks the display list
 
 # Power management.
-IDLE_TIMEOUT_SECONDS = 60 * 60  # turn the display off after this many seconds of no motion
+IDLE_TIMEOUT_SECONDS = 10  # turn the display off after this many seconds of no motion
 POWER_ON_DELAY_MS = 1500        # show black for this long after waking, before video
 
 # Auto-update. Set to 0 to disable.

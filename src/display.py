@@ -70,16 +70,35 @@ def _try_load_video():
 
 
 def _set_display_power(output_name: str, on: bool) -> bool:
-    """Turn a Wayland output on or off via wlr-randr. Returns True on success."""
+    """Turn a Wayland output on or off via wlr-randr. Returns True on success.
+
+    On failure, logs the wlr-randr exit code and stderr so the user can see what
+    went wrong (most commonly: 'Output HDMI-A-1 not found' if the configured
+    name doesn't match the compositor's, or a Wayland connection error when
+    invoked from a session that doesn't have WAYLAND_DISPLAY set).
+    """
+    direction = "on" if on else "off"
     try:
         result = subprocess.run(
-            ["wlr-randr", "--output", output_name, "--on" if on else "--off"],
+            ["wlr-randr", "--output", output_name, f"--{direction}"],
             timeout=5,
             capture_output=True,
             text=True,
         )
-        return result.returncode == 0
-    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        if result.returncode != 0:
+            err = (result.stderr or result.stdout or "").strip() or "(no output)"
+            print(
+                f"wlr-randr {output_name} --{direction} failed "
+                f"(rc={result.returncode}): {err}",
+                flush=True,
+            )
+            return False
+        return True
+    except FileNotFoundError:
+        print("wlr-randr is not installed — cannot toggle display power.", flush=True)
+        return False
+    except (subprocess.TimeoutExpired, OSError) as e:
+        print(f"wlr-randr error: {e}", flush=True)
         return False
 
 
