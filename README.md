@@ -106,8 +106,10 @@ After `IDLE_TIMEOUT_SECONDS` of no motion (default 60 minutes) each display is p
 `wlr-randr --output … --off`. The next motion event powers it back on, shows black for `POWER_ON_DELAY_MS` (default 1500
 ms) so the monitor can finish its handshake, and then starts the video.
 
-The display-index → output-name mapping is `DISPLAY_OUTPUT_NAMES` in `src/config.py`. Default is `HDMI-A-1` / `HDMI-A-2`
-(Pi 4 with KMS). Run `wlr-randr` on the Pi to confirm the names if power-off isn't working.
+Output names are discovered at runtime by running `wlr-randr` and reading the connected outputs in order — pygame
+display N is mapped to the Nth output wlr-randr reports. That means it works whether the HDMI cable is in the port
+nearer the USB-C (`HDMI-A-1`) or the one further from it (`HDMI-A-2`). The static `DISPLAY_OUTPUT_NAMES` map in
+`src/config.py` is only used as a fallback when wlr-randr can't be reached.
 
 If `wlr-randr` isn't installed, the app skips power management and logs a notice — the rest still works.
 

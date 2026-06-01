@@ -69,6 +69,31 @@ def _try_load_video():
     return cv2, fps
 
 
+def _list_wayland_outputs() -> list[str]:
+    """Return the names of connected outputs in the order wlr-randr prints them.
+
+    Each top-level line in wlr-randr's output is one connected output and starts
+    at column 0; the first whitespace-separated token is its name (e.g.
+    'HDMI-A-1', 'HDMI-A-2'). Properties of that output are indented. Returns []
+    if wlr-randr is missing, can't connect to the compositor, or errors out.
+    """
+    try:
+        result = subprocess.run(
+            ["wlr-randr"], timeout=5, capture_output=True, text=True,
+        )
+        if result.returncode != 0:
+            return []
+        names: list[str] = []
+        for line in result.stdout.splitlines():
+            if line and not line[0].isspace():
+                parts = line.split(None, 1)
+                if parts:
+                    names.append(parts[0])
+        return names
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return []
+
+
 def _set_display_power(output_name: str, on: bool) -> bool:
     """Turn a Wayland output on or off via wlr-randr. Returns True on success.
 
@@ -114,7 +139,17 @@ def control_display(display_index: int, pir_pin: int) -> None:
     signal.signal(signal.SIGTERM, signal.default_int_handler)
 
     prefix = f"[d{display_index}/gpio{pir_pin}]"
-    output_name = DISPLAY_OUTPUT_NAMES.get(display_index)
+
+    # Discover the Wayland output name from wlr-randr (HDMI-A-1, HDMI-A-2, …).
+    # We use the Nth connected output in wlr-randr's enumeration as the one
+    # for pygame display N — this matches the kernel's order on Pi 4 / labwc
+    # regardless of which physical port is in use. Falls back to the static
+    # DISPLAY_OUTPUT_NAMES map if wlr-randr can't be reached.
+    outputs = _list_wayland_outputs()
+    if display_index < len(outputs):
+        output_name = outputs[display_index]
+    else:
+        output_name = DISPLAY_OUTPUT_NAMES.get(display_index)
     power_mgmt_ok = (
         output_name is not None and shutil.which("wlr-randr") is not None
     )
@@ -194,7 +229,7 @@ def control_display(display_index: int, pir_pin: int) -> None:
 
         print(
             f"{prefix} ready (mode={mode}, "
-            f"power_mgmt={'on' if power_mgmt_ok else 'unavailable'})",
+            f"power_mgmt={'on (output=' + output_name + ')' if power_mgmt_ok else 'unavailable'})",
             flush=True,
         )
         if not power_mgmt_ok:

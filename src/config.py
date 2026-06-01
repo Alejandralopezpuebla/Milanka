@@ -31,9 +31,11 @@ DISPLAY_PIN_MAP = {
     1: 17,
 }
 
-# Display index → Wayland output name (for wlr-randr power control).
-# Pi 4 with KMS uses HDMI-A-1 / HDMI-A-2 by default. Check `wlr-randr` on the
-# Pi if power-off isn't working and adjust here.
+# Fallback display-index → Wayland output name map. At runtime the app first
+# discovers names by running `wlr-randr` and uses the Nth connected output for
+# display index N — that handles "which HDMI port is the cable in" correctly,
+# regardless of whether it's HDMI-A-1 (port nearer USB-C) or HDMI-A-2.
+# This map is only consulted when wlr-randr is unreachable.
 DISPLAY_OUTPUT_NAMES = {
     0: "HDMI-A-1",
     1: "HDMI-A-2",
