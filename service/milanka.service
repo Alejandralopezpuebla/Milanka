@@ -8,7 +8,11 @@ Type=simple
 WorkingDirectory=/opt/Milanka
 Environment=DISPLAY=:0
 Environment=WAYLAND_DISPLAY=wayland-0
-Environment=SDL_VIDEODRIVER=wayland,x11
+# Force pygame through Xwayland (X11) rather than native Wayland. This lets
+# pygame's own mouse.set_visible(False) / set_pos(...) actually take effect —
+# labwc honors cursor requests from Xwayland clients. Native Wayland on labwc
+# ignored them, leaving the cursor visible.
+Environment=SDL_VIDEODRIVER=x11
 # Wait a few seconds for the desktop/Wayland compositor to be fully up before
 # pygame tries to grab the screen. Without this the service races labwc and
 # fails on the first attempt(s), then gets restart-looped.
