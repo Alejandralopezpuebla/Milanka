@@ -8,8 +8,7 @@
 # What it does:
 #   1. Creates ./venv and installs requirements.txt into it.
 #   2. On a Raspberry Pi only: installs wlr-randr (used to power displays off
-#      after an idle period) and ydotool (used to warp the cursor to the
-#      bottom-right corner — pygame.mouse.set_pos is a no-op on labwc/Wayland).
+#      after an idle period).
 #   3. On a Raspberry Pi only: undoes the previously-added XCURSOR_SIZE=1 line
 #      in ~/.config/labwc/environment, if present.
 #   4. Ensures the videos/ folder exists, and (Pi only) creates two Desktop
@@ -46,25 +45,14 @@ if [ -f requirements.txt ]; then
     "$VENV_DIR/bin/pip" install -r requirements.txt
 fi
 
-# 2. Pi-only: install wlr-randr (display power-off) and ydotool (cursor warping
-# on Wayland — pygame's set_pos doesn't work on labwc because the compositor
-# refuses client-side warp requests; ydotool injects at /dev/uinput instead).
+# 2. Pi-only: ensure wlr-randr is installed (used for display power management).
 if [ -f /etc/rpi-issue ]; then
-    missing=()
-    command -v wlr-randr >/dev/null 2>&1 || missing+=(wlr-randr)
-    command -v ydotool   >/dev/null 2>&1 || missing+=(ydotool)
-    if [ ${#missing[@]} -gt 0 ]; then
-        echo "Installing: ${missing[*]} (sudo required)..."
+    if ! command -v wlr-randr >/dev/null 2>&1; then
+        echo "Installing wlr-randr (sudo required, used for screen power-off)..."
         sudo apt-get update -qq
-        sudo apt-get install -y "${missing[@]}"
+        sudo apt-get install -y wlr-randr
     else
-        echo "wlr-randr and ydotool already installed."
-    fi
-
-    # Run ydotoold as a system service so we can talk to it via the default
-    # socket. Failure here is non-fatal — cursor will just stay where it is.
-    if systemctl list-unit-files | grep -q '^ydotoold\.service'; then
-        sudo systemctl enable --now ydotoold || true
+        echo "wlr-randr already installed."
     fi
 fi
 
