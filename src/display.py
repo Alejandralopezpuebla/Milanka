@@ -164,6 +164,7 @@ def control_display(display_index: int, pir_pin: int) -> None:
     waking_until = None       # monotonic ts when the wake delay ends, or None
     last_motion_time = None
     last_pir_poll = 0.0
+    last_cursor_park = 0.0    # last time we warped the cursor to the corner
     next_frame_time = 0.0
     boot_time = time.monotonic()  # treat boot as the last "activity" for idle timing
 
@@ -268,6 +269,17 @@ def control_display(display_index: int, pir_pin: int) -> None:
                         present()
 
             now = time.monotonic()
+
+            # Keep parking the cursor in the bottom-right corner while we're in
+            # fullscreen. The single set_pos() right after set_mode() above can
+            # fail silently on Wayland if the window doesn't yet have pointer
+            # focus, and once the user moves the mouse the cursor would just
+            # stay wherever they left it. Re-warping every ~500 ms snaps it back
+            # to the corner as soon as focus is acquired and keeps it pinned.
+            # Skipped in windowed mode so the user can actually use the cursor.
+            if not windowed_mode and now - last_cursor_park >= 0.5:
+                pygame.mouse.set_pos((screen_size[0] - 1, screen_size[1] - 1))
+                last_cursor_park = now
 
             # 1. Poll the PIR at POLL_INTERVAL cadence.
             if now - last_pir_poll >= POLL_INTERVAL:
