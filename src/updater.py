@@ -3,9 +3,15 @@ then re-run install.sh so dependency / unit changes are applied before the
 caller exits and systemd restarts the service."""
 
 import os
+import socket
 import subprocess
+from urllib.parse import urlparse
 
 from config import REPO_DIR
+
+# Cached origin remote URL — never changes during a process's lifetime, so
+# parse it once instead of running `git remote get-url` every hour.
+_remote_url_cache: str | None = None
 
 
 def _git(args: list[str], timeout: float) -> subprocess.CompletedProcess | None:
@@ -22,6 +28,55 @@ def _git(args: list[str], timeout: float) -> subprocess.CompletedProcess | None:
         return None
 
 
+def _origin_host_port() -> tuple[str, int] | None:
+    """Return (host, port) for the origin remote, or None if we can't parse it.
+
+    Handles the common URL formats:
+      https://github.com/user/repo.git           → ('github.com', 443)
+      http://example.com/user/repo.git           → ('example.com', 80)
+      ssh://git@github.com:2222/user/repo.git    → ('github.com', 2222)
+      git@github.com:user/repo.git               → ('github.com', 22)
+    """
+    global _remote_url_cache
+    if _remote_url_cache is None:
+        result = _git(["remote", "get-url", "origin"], timeout=3)
+        if result is None or result.returncode != 0:
+            return None
+        _remote_url_cache = result.stdout.strip()
+
+    url = _remote_url_cache
+    if url.startswith(("http://", "https://", "ssh://", "git://")):
+        parsed = urlparse(url)
+        host = parsed.hostname
+        if not host:
+            return None
+        if parsed.port:
+            return host, parsed.port
+        default_ports = {"https": 443, "http": 80, "ssh": 22, "git": 9418}
+        return host, default_ports.get(parsed.scheme, 443)
+    if "@" in url and ":" in url:
+        try:
+            host = url.split("@", 1)[1].split(":", 1)[0]
+            return host, 22
+        except (IndexError, ValueError):
+            return None
+    return None
+
+
+def _can_reach_remote(timeout: float = 3.0) -> bool:
+    """Fast TCP probe to the origin remote — returns False within `timeout` seconds
+    if we have no internet / DNS / route to the host. Avoids waiting up to 20 s
+    for `git fetch` to give up on its own."""
+    host_port = _origin_host_port()
+    if host_port is None:
+        return False
+    try:
+        with socket.create_connection(host_port, timeout=timeout):
+            return True
+    except (OSError, socket.timeout):
+        return False
+
+
 def check_for_updates() -> bool:
     """Fetch and (if upstream has new commits) force-reset the working tree to upstream.
 
@@ -30,10 +85,17 @@ def check_for_updates() -> bool:
 
     Returns True if HEAD was moved. Returns False if there's no internet, no
     new commits, or the operation failed — the parent loop just keeps going.
+
+    Skips the git fetch entirely (and returns within ~3 seconds) if the remote
+    host can't be reached, so we don't block the parent for 20 s every check
+    when the Pi is offline.
     """
-    fetch = _git(["fetch", "--quiet"], timeout=20)
+    if not _can_reach_remote():
+        return False  # offline or DNS-failed — skip silently
+
+    fetch = _git(["fetch", "--quiet"], timeout=10)
     if fetch is None or fetch.returncode != 0:
-        return False  # most likely no internet; stay quiet
+        return False
 
     local = _git(["rev-parse", "HEAD"], timeout=5)
     upstream = _git(["rev-parse", "@{u}"], timeout=5)
