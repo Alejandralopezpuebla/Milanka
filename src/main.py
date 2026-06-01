@@ -1,11 +1,10 @@
 """Entry point: detects displays, spawns one controller subprocess per display,
-reconciles hot-plug events, periodically pulls upstream code, and shuts
-everything down on signal."""
+reconciles hot-plug events, periodically pulls upstream code (via updater),
+and shuts everything down on signal."""
 
 import multiprocessing as mp
 import os
 import signal
-import subprocess
 import sys
 import time
 
@@ -19,10 +18,10 @@ import pygame  # noqa: E402
 from config import (  # noqa: E402
     DISPLAY_PIN_MAP,
     HOTPLUG_CHECK_INTERVAL,
-    REPO_DIR,
     UPDATE_CHECK_INTERVAL,
 )
 from display import control_display  # noqa: E402
+from updater import check_for_updates, run_post_update_install  # noqa: E402
 
 
 def detect_display_count() -> int:
@@ -31,88 +30,6 @@ def detect_display_count() -> int:
         return len(pygame.display.get_desktop_sizes())
     finally:
         pygame.quit()
-
-
-def _git(args: list[str], timeout: float) -> subprocess.CompletedProcess | None:
-    """Run a git command in the repo dir. Returns the CompletedProcess, or None on timeout/OS error."""
-    try:
-        return subprocess.run(
-            ["git", *args],
-            cwd=str(REPO_DIR),
-            timeout=timeout,
-            capture_output=True,
-            text=True,
-        )
-    except (subprocess.TimeoutExpired, OSError):
-        return None
-
-
-def check_for_updates() -> bool:
-    """Fetch and (if upstream has new commits) fast-forward pull.
-
-    Returns True if any new commits were pulled. Returns False if there's no
-    internet, no new commits, the working tree has conflicts, or anything else
-    went wrong — the parent loop should just keep going in that case.
-    """
-    fetch = _git(["fetch", "--quiet"], timeout=20)
-    if fetch is None or fetch.returncode != 0:
-        return False  # most likely no internet; stay quiet
-
-    local = _git(["rev-parse", "HEAD"], timeout=5)
-    upstream = _git(["rev-parse", "@{u}"], timeout=5)
-    if (
-        local is None
-        or upstream is None
-        or local.returncode != 0
-        or upstream.returncode != 0
-        or local.stdout.strip() == upstream.stdout.strip()
-    ):
-        return False
-
-    print(
-        f"New commits upstream (local={local.stdout.strip()[:8]}, "
-        f"upstream={upstream.stdout.strip()[:8]}); pulling...",
-        flush=True,
-    )
-    pull = _git(["pull", "--ff-only", "--quiet"], timeout=60)
-    if pull is None or pull.returncode != 0:
-        msg = pull.stderr.strip() if pull is not None else "timeout"
-        print(f"git pull failed: {msg}", flush=True)
-        return False
-    return True
-
-
-def run_post_update_install() -> None:
-    """Re-run install.sh so any new requirements / unit file changes are applied.
-
-    MILANKA_SKIP_SERVICE_RESTART is set so service.sh skips its `systemctl restart`
-    — we'll exit shortly and systemd's Restart=always will pick up the new code
-    (and the new unit, since daemon-reload was already done).
-    """
-    install_script = REPO_DIR / "install.sh"
-    if not install_script.exists():
-        print("install.sh not found; skipping post-update install.", flush=True)
-        return
-    env = os.environ.copy()
-    env["MILANKA_SKIP_SERVICE_RESTART"] = "1"
-    print("Running install.sh to apply post-update changes...", flush=True)
-    try:
-        result = subprocess.run(
-            ["bash", str(install_script)],
-            cwd=str(REPO_DIR),
-            env=env,
-            timeout=300,
-        )
-        if result.returncode != 0:
-            print(
-                f"install.sh exited with code {result.returncode}; "
-                f"continuing anyway, the restart may pick up partial state",
-                flush=True,
-            )
-    except subprocess.TimeoutExpired:
-        print("install.sh timed out after 300s; continuing.", flush=True)
-    except OSError as e:
-        print(f"install.sh could not be launched: {e}", flush=True)
 
 
 def spawn_controller(display_index: int) -> mp.Process:

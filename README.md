@@ -112,18 +112,20 @@ If `wlr-randr` isn't installed, the app skips power management and logs a notice
 ### Auto-update
 
 Every `UPDATE_CHECK_INTERVAL` seconds (default 3600 = 1 hour) the parent process runs `git fetch`. If the upstream
-branch has new commits, it does `git pull --ff-only`, then re-runs `install.sh` to pick up any new dependencies or
-unit-file changes, and finally exits — systemd then restarts the service with the new code (thanks to `Restart=always`
+branch has new commits, it does `git reset --hard @{u}` — **any local edits to tracked files are discarded** so the
+Pi always converges on whatever upstream looks like — then re-runs `install.sh` to pick up any new dependencies or
+unit-file changes, and finally exits. systemd restarts the service with the new code (thanks to `Restart=always`
 in the unit).
+
+Gitignored paths (notably `videos/` — including the `milanka.mp4` clip the user dropped in) are **not** touched by the
+reset, so your custom video survives every auto-update.
 
 To avoid SIGTERM-ing the running service while `install.sh` is still working, the auto-updater sets
 `MILANKA_SKIP_SERVICE_RESTART=1` in `install.sh`'s env. The downstream `service/service.sh` notices the flag and skips
 its own `systemctl --user restart`, leaving the restart to happen via the auto-updater's clean `sys.exit(0)`.
 
-If there's no internet, the fetch fails silently and the loop keeps running; the next check happens an hour later.
-Local edits that block a fast-forward (uncommitted changes or diverged history) cause the pull to fail loudly in the
-journal; the service keeps running on the old code until the conflict is resolved. To disable auto-update entirely,
-set `UPDATE_CHECK_INTERVAL = 0` in `src/config.py`.
+If there's no internet, the fetch fails silently and the loop keeps running; the next check happens an hour later. To
+disable auto-update entirely, set `UPDATE_CHECK_INTERVAL = 0` in `src/config.py`.
 
 ### Developing on macOS / non-Pi
 
@@ -171,6 +173,7 @@ milanka/
 ├── src/
 │   ├── config.py        # Tunable constants (pins, timing, paths, colors)
 │   ├── display.py       # Per-display subprocess: motion → video/red, power off/on
+│   ├── updater.py       # Auto-update: git fetch + reset --hard, post-update install.sh
 │   └── main.py          # Orchestrator: hot-plug watcher, signal handling
 ├── service/
 │   ├── milanka.service  # systemd user unit
