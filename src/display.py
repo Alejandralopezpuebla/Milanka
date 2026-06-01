@@ -336,13 +336,23 @@ def control_display(display_index: int, pir_pin: int) -> None:
     except KeyboardInterrupt:
         pass
     finally:
-        # Once we're shutting down, ignore any further SIGINT/SIGTERM so the
+        # Once we're shutting down, block any further SIGINT/SIGTERM so the
         # cleanup below can finish. Without this, a second signal (e.g. the
         # parent's p.terminate() arriving while we're already mid-cleanup from
-        # the original Ctrl+C) would raise KeyboardInterrupt out of, say,
-        # pygame.quit() and leave things half-released.
-        signal.signal(signal.SIGINT, signal.SIG_IGN)
-        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        # the original Ctrl+C, or the user mashing Ctrl+C twice) would raise
+        # KeyboardInterrupt out of, say, pygame.quit() — or even out of the
+        # signal.signal() call itself (the call isn't atomic). pthread_sigmask
+        # is a single syscall and atomic from this thread's point of view.
+        try:
+            if hasattr(signal, "pthread_sigmask"):
+                signal.pthread_sigmask(
+                    signal.SIG_BLOCK, {signal.SIGINT, signal.SIGTERM},
+                )
+            else:
+                signal.signal(signal.SIGINT, signal.SIG_IGN)
+                signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        except (Exception, KeyboardInterrupt):
+            pass  # best-effort — proceed to cleanup regardless
 
         # Make sure we leave the display powered on so the user doesn't see a
         # dark screen after the service stops.
