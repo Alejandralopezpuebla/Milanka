@@ -310,6 +310,14 @@ def control_display(display_index: int, pir_pin: int) -> None:
     except KeyboardInterrupt:
         pass
     finally:
+        # Once we're shutting down, ignore any further SIGINT/SIGTERM so the
+        # cleanup below can finish. Without this, a second signal (e.g. the
+        # parent's p.terminate() arriving while we're already mid-cleanup from
+        # the original Ctrl+C) would raise KeyboardInterrupt out of, say,
+        # pygame.quit() and leave things half-released.
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+
         # Make sure we leave the display powered on so the user doesn't see a
         # dark screen after the service stops.
         if power_state == "off" and power_mgmt_ok:
