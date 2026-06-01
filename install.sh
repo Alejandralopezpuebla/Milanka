@@ -9,8 +9,10 @@
 #   1. Creates ./venv and installs requirements.txt into it.
 #   2. On a Raspberry Pi only: installs wlr-randr (used to power displays off
 #      after an idle period).
-#   3. On a Raspberry Pi only: undoes the previously-added XCURSOR_SIZE=1 line
-#      in ~/.config/labwc/environment, if present.
+#   3. On a Raspberry Pi only: installs unclutter and adds it to labwc's
+#      autostart so the cursor auto-hides after 1 second of inactivity. Also
+#      removes the older XCURSOR_SIZE=1 line from ~/.config/labwc/environment
+#      if a previous installer version left one behind.
 #   4. Ensures the videos/ folder exists, and (Pi only) creates two Desktop
 #      shortcuts: a 'milanka-videos' symlink to the videos folder, and a
 #      'Milanka Terminal' launcher that opens lxterminal in /opt/Milanka.
@@ -56,12 +58,34 @@ if [ -f /etc/rpi-issue ]; then
     fi
 fi
 
-# 3. Pi-only: undo the previously-added XCURSOR_SIZE=1 line if it's still
-# present from an older install. The app now lets the cursor stay visible.
+# 3. Pi-only: hide the cursor via unclutter (auto-hides after idle).
 if [ -f /etc/rpi-issue ]; then
+    # Install unclutter if not already present.
+    if ! command -v unclutter >/dev/null 2>&1; then
+        echo "Installing unclutter (sudo required, auto-hides the cursor)..."
+        sudo apt-get install -y unclutter
+    else
+        echo "unclutter already installed."
+    fi
+
+    # Add unclutter to labwc's autostart so it runs at session start.
+    # Idempotent: only appended if a matching line isn't already there.
+    AUTOSTART="$HOME/.config/labwc/autostart"
+    mkdir -p "$(dirname "$AUTOSTART")"
+    if [ ! -f "$AUTOSTART" ] || ! grep -q '^unclutter' "$AUTOSTART"; then
+        echo "Adding 'unclutter --timeout 1 &' to $AUTOSTART..."
+        echo 'unclutter --timeout 1 &' >> "$AUTOSTART"
+        unclutter_added=1
+    else
+        echo "unclutter already in labwc autostart."
+        unclutter_added=0
+    fi
+
+    # Housekeeping: remove the older XCURSOR_SIZE=1 line if a previous version
+    # of this installer added it.
     LABWC_ENV="$HOME/.config/labwc/environment"
     if [ -f "$LABWC_ENV" ] && grep -qxF 'XCURSOR_SIZE=1' "$LABWC_ENV"; then
-        echo "Removing previously-added XCURSOR_SIZE=1 from $LABWC_ENV..."
+        echo "Removing stale XCURSOR_SIZE=1 from $LABWC_ENV..."
         grep -vxF 'XCURSOR_SIZE=1' "$LABWC_ENV" > "$LABWC_ENV.tmp"
         mv "$LABWC_ENV.tmp" "$LABWC_ENV"
     fi
@@ -107,3 +131,9 @@ fi
 
 echo
 echo "Install complete."
+if [ "${unclutter_added:-0}" = "1" ]; then
+    echo
+    echo "unclutter was added to labwc's autostart. Reboot or log out + back in"
+    echo "so labwc re-reads its autostart and the cursor starts hiding:"
+    echo "    sudo reboot"
+fi

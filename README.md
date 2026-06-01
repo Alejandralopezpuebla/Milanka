@@ -49,9 +49,10 @@ it any time you bump dependencies, change the service unit, or just want to conf
 
 1. **Creates `./venv` and installs `requirements.txt` into it.** Runs everywhere.
 2. **(Pi only) Installs `wlr-randr`** via apt, used by the app to power displays off after idle.
-3. **(Pi only) Removes a stale `XCURSOR_SIZE=1` line** from `~/.config/labwc/environment` if a previous version of
-   this installer left one there. The app now lets the cursor stay visible (needed for the windowed-mode introduced
-   with ESC), so this earlier hack is no longer wanted.
+3. **(Pi only) Installs `unclutter` and adds it to labwc's autostart** (`~/.config/labwc/autostart`) so the cursor
+   auto-hides after 1 second of inactivity. Reboot (or log out and back in) for labwc to re-read its autostart and
+   start hiding the cursor; the installer prints a reminder when this is needed. Also removes a stale
+   `XCURSOR_SIZE=1` line from `~/.config/labwc/environment` if a previous installer version left one behind.
 4. **Ensures `videos/` exists**, and **(Pi only) writes two Desktop shortcuts**:
    - `milanka-videos` — a symlink to the videos folder, so clips can be dropped in via the file manager.
    - `Milanka Terminal` — a launcher that opens `lxterminal` already `cd`'d into `/opt/Milanka`, handy for running
