@@ -89,6 +89,17 @@ The folder itself is tracked (via an empty `.gitkeep` placeholder), but everythi
 `.gitignore` — large `.mp4` files shouldn't bloat the repository. That means `git pull` won't overwrite or remove the
 clip you've dropped in.
 
+#### Generating a sample video
+
+If you don't have a clip handy, the repo ships a generator that produces a 30-second "DVD logo"-style bouncing
+animation:
+
+```bash
+venv/bin/python src/scripts/generate_sample_video.py
+```
+
+Output is written to `videos/milanka.mp4` — exactly where the app expects it. 1280×720 @ 30 fps, ~30 s long.
+
 ### Power saving
 
 After `IDLE_TIMEOUT_SECONDS` of no motion (default 60 minutes) each display is powered off via
@@ -174,11 +185,13 @@ milanka/
 │   ├── config.py        # Tunable constants (pins, timing, paths, colors)
 │   ├── display.py       # Per-display subprocess: motion → video/red, power off/on
 │   ├── updater.py       # Auto-update: git fetch + reset --hard, post-update install.sh
-│   └── main.py          # Orchestrator: hot-plug watcher, signal handling
+│   ├── main.py          # Orchestrator: hot-plug watcher, signal handling
+│   └── scripts/
+│       └── generate_sample_video.py  # Builds a 30s "DVD-logo" bouncing milanka.mp4
 ├── service/
 │   ├── milanka.service  # systemd user unit
 │   └── service.sh       # one-shot installer for the service
-├── videos/              # Drop milanka.mp4 here (git-ignored, except for .gitkeep)
+├── videos/              # milanka.mp4 lives here (git-ignored, except .gitkeep)
 │   └── .gitkeep
 ├── install.sh           # Install / configure (venv, wlr-randr, videos symlink, service)
 ├── requirements.txt     # Python dependencies
