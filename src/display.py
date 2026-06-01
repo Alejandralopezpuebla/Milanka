@@ -36,16 +36,33 @@ def detect_display_count() -> int:
 
 
 def _try_load_video():
-    """Return (cv2_module, sample_fps) if video.mp4 exists and opens, else (None, None)."""
+    """Return (cv2_module, sample_fps) if video.mp4 exists and opens, else (None, None).
+
+    Prints a clear reason on failure so the user can diagnose why the app is
+    showing the red fallback instead of the video.
+    """
     if not VIDEO_PATH.exists():
+        print(
+            f"video mode: {VIDEO_PATH} not found → falling back to red",
+            flush=True,
+        )
         return None, None
     try:
         import cv2  # local import: only needed in video mode
-    except ImportError:
+    except ImportError as e:
+        print(
+            f"video mode: cv2 not importable ({e}); is the venv active? → falling back to red",
+            flush=True,
+        )
         return None, None
     cap = cv2.VideoCapture(str(VIDEO_PATH))
     if not cap.isOpened():
         cap.release()
+        print(
+            f"video mode: cv2.VideoCapture couldn't open {VIDEO_PATH} "
+            f"(unsupported codec? corrupt file?) → falling back to red",
+            flush=True,
+        )
         return None, None
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
     cap.release()
