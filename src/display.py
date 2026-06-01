@@ -26,6 +26,15 @@ from config import (  # noqa: E402
 )
 
 
+def detect_display_count() -> int:
+    """Return how many displays the desktop currently exposes (Wayland or X11)."""
+    pygame.init()
+    try:
+        return len(pygame.display.get_desktop_sizes())
+    finally:
+        pygame.quit()
+
+
 def _try_load_video():
     """Return (cv2_module, sample_fps) if video.mp4 exists and opens, else (None, None)."""
     if not VIDEO_PATH.exists():

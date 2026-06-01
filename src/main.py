@@ -13,23 +13,13 @@ import time
 # enumerate displays before any subprocess is spawned.
 os.environ.setdefault("DISPLAY", ":0")
 
-import pygame  # noqa: E402
-
 from config import (  # noqa: E402
     DISPLAY_PIN_MAP,
     HOTPLUG_CHECK_INTERVAL,
     UPDATE_CHECK_INTERVAL,
 )
-from display import control_display  # noqa: E402
+from display import control_display, detect_display_count  # noqa: E402
 from updater import check_for_updates, run_post_update_install  # noqa: E402
-
-
-def detect_display_count() -> int:
-    pygame.init()
-    try:
-        return len(pygame.display.get_desktop_sizes())
-    finally:
-        pygame.quit()
 
 
 def spawn_controller(display_index: int) -> mp.Process:
