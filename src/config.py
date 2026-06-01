@@ -12,7 +12,7 @@ IDLE_TIMEOUT_SECONDS = 60 * 60  # turn the display off after this many seconds o
 POWER_ON_DELAY_MS = 1500        # show black for this long after waking, before video
 
 # Auto-update. Set to 0 to disable.
-UPDATE_CHECK_INTERVAL = 600     # seconds between `git fetch` checks (0 disables)
+UPDATE_CHECK_INTERVAL = 3600    # seconds between `git fetch` checks (0 disables)
 
 # Repo root (used for git operations and to resolve video.mp4).
 REPO_DIR = pathlib.Path(__file__).resolve().parent.parent
