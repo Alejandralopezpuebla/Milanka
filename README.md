@@ -61,7 +61,7 @@ it any time you bump dependencies, change the service unit, or just want to conf
    to `~/.config/systemd/user/milanka.service`, calls `loginctl enable-linger`, runs `daemon-reload`+`enable`, and
    restarts the service (unless `MILANKA_SKIP_SERVICE_RESTART=1` is set — used by the auto-updater).
 
-After the reboot:
+After install (and on every boot from then on):
 
 - The desktop auto-logs in.
 - The systemd user service starts the app within a few seconds.

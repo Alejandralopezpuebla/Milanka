@@ -186,11 +186,11 @@ def control_display(display_index: int, pir_pin: int) -> None:
         )
         pygame.display.set_caption(f"milanka display {display_index}")
 
-        # Hide the cursor AFTER set_mode (some platforms reset it on surface
-        # creation) — on Wayland this is advisory and may be ignored, but on
-        # X11/Xwayland it works. Belt and suspenders: also assign a 1x1
-        # transparent cursor image, and park the cursor in the bottom-right
-        # corner (the warp is a no-op on Wayland but works elsewhere).
+        # Hide the cursor AFTER set_mode — some platforms reset it on surface
+        # creation. The systemd unit forces SDL_VIDEODRIVER=x11 (Xwayland on
+        # the Pi), so labwc honors the cursor-hide request. Belt and suspenders:
+        # also assign a 1x1 transparent cursor image and warp the pointer to
+        # the bottom-right corner.
         pygame.mouse.set_visible(False)
         blank = pygame.Surface((1, 1), pygame.SRCALPHA)
         pygame.mouse.set_cursor(pygame.cursors.Cursor((0, 0), blank))
