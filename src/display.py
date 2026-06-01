@@ -3,6 +3,7 @@ window from one PIR sensor, manages video playback and display power."""
 
 import os
 import shutil
+import signal
 import subprocess
 import time
 from datetime import datetime
@@ -58,6 +59,15 @@ def _set_display_power(output_name: str, on: bool) -> bool:
 
 def control_display(display_index: int, pir_pin: int) -> None:
     """Drive a fullscreen window on `display_index` from the PIR on `pir_pin`."""
+    # multiprocessing.fork() copies the parent's signal handlers into us.
+    # That made Ctrl+C (SIGINT to the whole process group) run the parent's
+    # shutdown() in this process too — referencing a stale procs dict — then
+    # return as if nothing happened, leaving the loop running. Reset both
+    # signals to Python's default_int_handler so they raise KeyboardInterrupt,
+    # which the try/except below catches and the finally clause cleans up after.
+    signal.signal(signal.SIGINT, signal.default_int_handler)
+    signal.signal(signal.SIGTERM, signal.default_int_handler)
+
     prefix = f"[d{display_index}/gpio{pir_pin}]"
     output_name = DISPLAY_OUTPUT_NAMES.get(display_index)
     power_mgmt_ok = (

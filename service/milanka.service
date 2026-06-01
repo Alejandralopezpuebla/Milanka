@@ -20,5 +20,11 @@ ExecStart=/opt/Milanka/venv/bin/python /opt/Milanka/src/main.py
 Restart=always
 RestartSec=3
 
+# Bound how long `systemctl stop` waits. If the parent is mid-subprocess.run
+# (e.g. inside the auto-updater's git fetch or install.sh), it can't process
+# SIGTERM until that returns. After 10s systemd sends SIGKILL and we move on.
+TimeoutStopSec=10
+KillMode=mixed
+
 [Install]
 WantedBy=default.target
