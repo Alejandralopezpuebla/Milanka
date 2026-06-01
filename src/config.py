@@ -4,7 +4,7 @@ import pathlib
 
 # Sensor polling and screen state.
 POLL_INTERVAL = 1.0            # seconds between PIR readings
-HOLD_SECONDS = 6.0             # keep playing this long after the last detected motion
+HOLD_SECONDS = 9.0             # keep playing this long after the last detected motion
 HOTPLUG_CHECK_INTERVAL = 3.0   # how often the parent re-checks the display list
 
 # Power management.
