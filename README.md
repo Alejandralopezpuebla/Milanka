@@ -75,6 +75,10 @@ The app expects `videos/milanka.mp4` in the repo (so `/opt/Milanka/videos/milank
 the matching display switches from black to playing the video on a loop. When motion stops for `HOLD_SECONDS`, the
 screen returns to black; the next motion event restarts the video from frame 0.
 
+If the clip has an audio track and `ffmpeg` is installed, the **primary display (index 0)** also loops the sound while
+the video plays (extracted from the clip on startup). Only display 0 plays audio so two displays don't fight over the
+single output or drift out of sync; without `ffmpeg`, or for a silent clip, playback is silent.
+
 If `videos/milanka.mp4` is missing or unreadable, the app falls back to red-screen behavior — same triggering, just a
 flat red fullscreen instead of video.
 
@@ -96,14 +100,16 @@ clip you've dropped in.
 
 #### Generating a sample video
 
-If you don't have a clip handy, the repo ships a generator that produces a 30-second "DVD logo"-style bouncing
-animation:
+If you don't have a clip handy, the repo ships a generator that produces a 2-minute "DVD logo"-style bouncing
+animation, scored with a synthesised loop of the opening of Beethoven's Symphony No. 5:
 
 ```bash
 venv/bin/python src/scripts/generate_sample_video.py
 ```
 
-Output is written to `videos/milanka.mp4` — exactly where the app expects it. 1280×720 @ 30 fps, ~30 s long.
+Output is written to `videos/milanka.mp4` — exactly where the app expects it. 1280×720 @ 30 fps, ~120 s long. The
+soundtrack is muxed in with `ffmpeg`; if `ffmpeg` isn't installed the script still runs and writes a silent clip
+(with a warning).
 
 ### Power saving
 
@@ -205,7 +211,7 @@ milanka/
 │   ├── updater.py       # Auto-update: git fetch + reset --hard, post-update install.sh
 │   ├── main.py          # Orchestrator: hot-plug watcher, signal handling
 │   └── scripts/
-│       └── generate_sample_video.py  # Builds a 30s "DVD-logo" bouncing milanka.mp4
+│       └── generate_sample_video.py  # Builds a 2-min "DVD-logo" bouncing milanka.mp4 (with Beethoven audio)
 ├── service/
 │   ├── milanka.service  # systemd user unit
 │   └── service.sh       # one-shot installer for the service

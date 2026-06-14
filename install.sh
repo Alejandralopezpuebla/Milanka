@@ -50,14 +50,18 @@ if [ -f requirements.txt ]; then
     "$VENV_DIR/bin/pip" install -r requirements.txt
 fi
 
-# 2. Pi-only: ensure wlr-randr is installed (used for display power management).
+# 2. Pi-only: ensure wlr-randr (display power management) and ffmpeg (used to
+# build the sample clip's soundtrack and to play any clip's audio) are present.
 if [ -f /etc/rpi-issue ]; then
-    if ! command -v wlr-randr >/dev/null 2>&1; then
-        echo "Installing wlr-randr (sudo required, used for screen power-off)..."
+    missing=()
+    command -v wlr-randr >/dev/null 2>&1 || missing+=("wlr-randr")
+    command -v ffmpeg    >/dev/null 2>&1 || missing+=("ffmpeg")
+    if [ "${#missing[@]}" -gt 0 ]; then
+        echo "Installing ${missing[*]} (sudo required)..."
         sudo apt-get update -qq
-        sudo apt-get install -y wlr-randr
+        sudo apt-get install -y "${missing[@]}"
     else
-        echo "wlr-randr already installed."
+        echo "wlr-randr and ffmpeg already installed."
     fi
 fi
 

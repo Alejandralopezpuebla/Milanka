@@ -5,6 +5,7 @@ import os
 import shutil
 import signal
 import subprocess
+import tempfile
 import time
 from datetime import datetime
 
@@ -68,6 +69,54 @@ def _try_load_video():
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
     cap.release()
     return cv2, fps
+
+
+def _setup_audio(video_path, prefix: str):
+    """Extract the video's audio track to a temp wav and load it into the mixer.
+
+    cv2.VideoCapture (used for the frames) ignores audio entirely, so to get
+    sound we pull the track out with ffmpeg once at startup and let pygame's
+    mixer loop it during playback. Best-effort: returns the temp wav path on
+    success (so it can be cleaned up later) or None if anything is missing —
+    no ffmpeg, no audio track in the clip, or no usable audio device — in which
+    case playback is simply silent. Only the primary display calls this, so two
+    displays don't fight over the single audio output or drift out of sync.
+    """
+    if shutil.which("ffmpeg") is None:
+        print(f"{prefix} audio: ffmpeg not found → silent playback", flush=True)
+        return None
+
+    fd, wav = tempfile.mkstemp(suffix=".wav", prefix="milanka-audio-")
+    os.close(fd)
+    try:
+        result = subprocess.run(
+            ["ffmpeg", "-y", "-loglevel", "error", "-i", str(video_path),
+             "-vn", "-ac", "2", "-ar", "44100", wav],
+            capture_output=True, text=True,
+        )
+        if result.returncode != 0 or os.path.getsize(wav) == 0:
+            reason = (result.stderr or result.stdout or "").strip()
+            print(
+                f"{prefix} audio: no audio track to play (silent playback)"
+                f"{' — ' + reason if reason else ''}",
+                flush=True,
+            )
+            os.unlink(wav)
+            return None
+        pygame.mixer.init(frequency=44100)
+        pygame.mixer.music.load(wav)
+        print(
+            f"{prefix} audio: looping soundtrack from {video_path.name}",
+            flush=True,
+        )
+        return wav
+    except Exception as e:
+        print(f"{prefix} audio: setup failed ({e}) → silent playback", flush=True)
+        try:
+            os.unlink(wav)
+        except OSError:
+            pass
+        return None
 
 
 def _list_wayland_outputs() -> list[str]:
@@ -159,6 +208,7 @@ def control_display(display_index: int, pir_pin: int) -> None:
     mode = "video" if cv2 is not None else "red"
     frame_interval = (1.0 / video_fps) if video_fps else 1.0 / 30
     cap = None
+    audio_path = None  # temp wav extracted from the clip; set up below on display 0
 
     showing_motion = False
     power_state = "on"        # "on" or "off"
@@ -198,6 +248,19 @@ def control_display(display_index: int, pir_pin: int) -> None:
         pygame.mouse.set_cursor(pygame.cursors.Cursor((0, 0), blank))
         screen_size = screen.get_size()
         pygame.mouse.set_pos((screen_size[0] - 1, screen_size[1] - 1))
+
+        # Audio: only the primary display (index 0) plays sound, so two
+        # displays don't both grab the single audio output and drift apart.
+        # pygame.init() auto-initialises the mixer; release it on the other
+        # displays so the primary one can claim the device cleanly.
+        if mode == "video" and display_index == 0:
+            audio_path = _setup_audio(VIDEO_PATH, prefix)
+        else:
+            try:
+                pygame.mixer.quit()
+            except Exception:
+                pass
+        audio_ok = audio_path is not None
 
         def present():
             """Flip the back buffer, blitting the overlay on top if we're in windowed mode."""
@@ -261,6 +324,8 @@ def control_display(display_index: int, pir_pin: int) -> None:
                         if cap is not None:
                             cap.release()
                             cap = None
+                        if audio_ok:
+                            pygame.mixer.music.stop()
                         showing_motion = False  # force redraw on next loop iteration
                         screen = pygame.display.set_mode(
                             (640, 480), display=display_index,
@@ -331,6 +396,8 @@ def control_display(display_index: int, pir_pin: int) -> None:
                 if cap is not None:
                     cap.release()
                     cap = None
+                if audio_ok:
+                    pygame.mixer.music.stop()
                 showing_motion = False
                 _set_display_power(output_name, False)
                 power_state = "off"
@@ -370,6 +437,10 @@ def control_display(display_index: int, pir_pin: int) -> None:
                 if mode == "video":
                     cap = cv2.VideoCapture(str(VIDEO_PATH))
                     next_frame_time = now
+                    if audio_ok:
+                        # Loop the soundtrack for as long as motion holds; it
+                        # restarts from the top on each new motion event.
+                        pygame.mixer.music.play(loops=-1)
                 else:
                     screen.fill(RED)
                     present()
@@ -378,6 +449,8 @@ def control_display(display_index: int, pir_pin: int) -> None:
                 if cap is not None:
                     cap.release()
                     cap = None
+                if audio_ok:
+                    pygame.mixer.music.stop()
                 screen.fill(BLACK)
                 present()
                 showing_motion = False
@@ -440,6 +513,12 @@ def control_display(display_index: int, pir_pin: int) -> None:
             pygame.quit()
         except Exception:
             pass
+        # Remove the temp wav we extracted from the clip at startup.
+        if audio_path is not None:
+            try:
+                os.unlink(audio_path)
+            except OSError:
+                pass
         try:
             GPIO.cleanup(pir_pin)
         except Exception:
