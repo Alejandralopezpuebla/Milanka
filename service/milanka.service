@@ -13,6 +13,12 @@ Environment=WAYLAND_DISPLAY=wayland-0
 # labwc honors cursor requests from Xwayland clients. Native Wayland on labwc
 # ignored them, leaving the cursor visible.
 Environment=SDL_VIDEODRIVER=x11
+# Route audio through PulseAudio/PipeWire — the same server VLC and the desktop
+# use — so pygame honors your chosen default output (e.g. the 3.5mm jack).
+# Without this, SDL defaults to the raw ALSA driver, which bypasses that
+# routing and plays to the wrong device (often HDMI): the soundtrack shows as
+# `audio: looping soundtrack` in the logs yet is silent on the jack.
+Environment=SDL_AUDIODRIVER=pulseaudio
 # Wait a few seconds for the desktop/Wayland compositor to be fully up before
 # pygame tries to grab the screen. Without this the service races labwc and
 # fails on the first attempt(s), then gets restart-looped.
