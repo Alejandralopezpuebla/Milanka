@@ -29,12 +29,21 @@ from config import (  # noqa: E402
 
 
 def detect_display_count() -> int:
-    """Return how many displays the desktop currently exposes (Wayland or X11)."""
-    pygame.init()
+    """Return how many displays the desktop currently exposes (Wayland or X11).
+
+    Initialises ONLY the display subsystem — deliberately NOT pygame.init(),
+    which would also bring up the audio mixer (libpulse) in this process. This
+    runs in the parent before it fork()s the per-display controllers, and
+    libpulse is not fork-safe: once it's been initialised pre-fork, every
+    child's pygame.mixer.init() dies with "pa_context_new() failed" and the
+    soundtrack is silently dropped. Keeping the parent audio-free lets the
+    forked children open their own audio cleanly.
+    """
+    pygame.display.init()
     try:
         return len(pygame.display.get_desktop_sizes())
     finally:
-        pygame.quit()
+        pygame.display.quit()
 
 
 def _try_load_video():
