@@ -112,7 +112,15 @@ def _setup_audio(video_path, prefix: str):
             )
             os.unlink(wav)
             return None
-        pygame.mixer.init(frequency=44100)
+        # pygame.init() already opened the mixer at its default (~512-sample)
+        # buffer. That's only ~12 ms of audio, so it underruns — and stutters —
+        # whenever the main thread is busy decoding and upscaling a video frame
+        # (a ~15 ms spike per frame when scaling 720p→1440p). The buffer can't
+        # be resized while the mixer is open, so close and reopen it with a
+        # larger one (~93 ms at 44.1 kHz) to ride through those spikes. Latency
+        # is irrelevant here — nothing is synced to the picture.
+        pygame.mixer.quit()
+        pygame.mixer.init(frequency=44100, buffer=4096)
         pygame.mixer.music.load(wav)
         print(
             f"{prefix} audio: looping soundtrack from {video_path.name}",
