@@ -25,8 +25,17 @@ REPO_DIR = pathlib.Path(__file__).resolve().parent.parent
 # Video file shown on motion. If missing or unreadable, the app falls back to a
 # red fullscreen with identical triggering. The videos/ folder is git-ignored
 # (except for .gitkeep) so users can drop their own clips in without polluting
-# the repo. init.sh creates a Desktop symlink to this folder on the Pi.
+# the repo. install.sh creates a Desktop symlink to this folder on the Pi.
 VIDEO_PATH = REPO_DIR / "videos" / "milanka.mp4"
+
+# Let the GPU upscale the video. When True, the fullscreen window is created at
+# the clip's native resolution with pygame's SCALED flag, so each decoded frame
+# is blitted 1:1 and SDL/the GPU stretches it to the panel on flip(). That
+# avoids a full-frame CPU upscale every frame — the main cause of the CPU
+# pegging at 100% (and the playback lag) when the clip is smaller than the
+# display. Set False to fall back to the old CPU scaling (pygame.transform.scale)
+# if SCALED ever misbehaves on a given setup.
+USE_GPU_SCALING = True
 
 # Display index → PIR pin (BCM numbering).
 #   Display 0 ← PIR on GPIO 4  (physical pin 7)

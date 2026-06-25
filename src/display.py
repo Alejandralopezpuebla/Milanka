@@ -23,6 +23,7 @@ from config import (  # noqa: E402
     POLL_INTERVAL,
     POWER_ON_DELAY_MS,
     RED,
+    USE_GPU_SCALING,
     VERBOSE_LOGGING,
     VIDEO_PATH,
 )
@@ -47,17 +48,19 @@ def detect_display_count() -> int:
 
 
 def _try_load_video():
-    """Return (cv2_module, sample_fps) if video.mp4 exists and opens, else (None, None).
+    """Return (cv2_module, sample_fps, (w, h)) if video.mp4 exists and opens, else (None, None, None).
 
-    Prints a clear reason on failure so the user can diagnose why the app is
-    showing the red fallback instead of the video.
+    The (w, h) is the clip's native frame size, used to size the SCALED window
+    so the GPU (not the CPU) upscales to the panel. Prints a clear reason on
+    failure so the user can diagnose why the app is showing the red fallback
+    instead of the video.
     """
     if not VIDEO_PATH.exists():
         print(
             f"video mode: {VIDEO_PATH} not found → falling back to red",
             flush=True,
         )
-        return None, None
+        return None, None, None
     try:
         import cv2  # local import: only needed in video mode
     except ImportError as e:
@@ -65,7 +68,7 @@ def _try_load_video():
             f"video mode: cv2 not importable ({e}); is the venv active? → falling back to red",
             flush=True,
         )
-        return None, None
+        return None, None, None
     cap = cv2.VideoCapture(str(VIDEO_PATH))
     if not cap.isOpened():
         cap.release()
@@ -74,10 +77,13 @@ def _try_load_video():
             f"(unsupported codec? corrupt file?) → falling back to red",
             flush=True,
         )
-        return None, None
+        return None, None, None
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     cap.release()
-    return cv2, fps
+    size = (width, height) if width > 0 and height > 0 else None
+    return cv2, fps, size
 
 
 def _setup_audio(video_path, prefix: str):
@@ -114,11 +120,11 @@ def _setup_audio(video_path, prefix: str):
             return None
         # pygame.init() already opened the mixer at its default (~512-sample)
         # buffer. That's only ~12 ms of audio, so it underruns — and stutters —
-        # whenever the main thread is busy decoding and upscaling a video frame
-        # (a ~15 ms spike per frame when scaling 720p→1440p). The buffer can't
-        # be resized while the mixer is open, so close and reopen it with a
-        # larger one (~93 ms at 44.1 kHz) to ride through those spikes. Latency
-        # is irrelevant here — nothing is synced to the picture.
+        # whenever the main thread is busy decoding a video frame (a per-frame
+        # CPU spike). The buffer can't be resized while the mixer is open, so
+        # close and reopen it with a larger one (~93 ms at 44.1 kHz) to ride
+        # through those spikes. Latency is irrelevant here — nothing is synced to
+        # the picture.
         pygame.mixer.quit()
         pygame.mixer.init(frequency=44100, buffer=4096)
         pygame.mixer.music.load(wav)
@@ -221,7 +227,7 @@ def control_display(display_index: int, pir_pin: int) -> None:
         output_name is not None and shutil.which("wlr-randr") is not None
     )
 
-    cv2, video_fps = _try_load_video()
+    cv2, video_fps, video_size = _try_load_video()
     mode = "video" if cv2 is not None else "red"
     frame_interval = (1.0 / video_fps) if video_fps else 1.0 / 30
     cap = None
@@ -248,11 +254,31 @@ def control_display(display_index: int, pir_pin: int) -> None:
         GPIO.setup(pir_pin, GPIO.IN)
 
         pygame.init()
-        screen = pygame.display.set_mode(
-            (0, 0),
-            pygame.FULLSCREEN | pygame.NOFRAME,
-            display=display_index,
-        )
+        # In video mode, create the fullscreen window at the clip's native size
+        # with SCALED so each decoded frame blits 1:1 and the GPU upscales it to
+        # the panel on flip() — no per-frame CPU upscale. (0, 0) means "use the
+        # desktop resolution"; with SCALED, pygame treats the size we pass as the
+        # logical render size and stretches it to that desktop resolution.
+        # Falls back to a plain fullscreen surface (CPU scaling) for the red
+        # screen, when GPU scaling is disabled, or if SCALED can't be created.
+        flags = pygame.FULLSCREEN | pygame.NOFRAME
+        use_scaled = USE_GPU_SCALING and mode == "video" and video_size is not None
+        screen = None
+        if use_scaled:
+            try:
+                screen = pygame.display.set_mode(
+                    video_size, flags | pygame.SCALED, display=display_index,
+                )
+            except pygame.error as e:
+                print(
+                    f"{prefix} SCALED mode unavailable ({e}); using CPU scaling",
+                    flush=True,
+                )
+                screen = None
+        if screen is None:
+            screen = pygame.display.set_mode(
+                (0, 0), flags, display=display_index,
+            )
         pygame.display.set_caption(f"milanka display {display_index}")
 
         # Hide the cursor AFTER set_mode — some platforms reset it on surface
@@ -479,9 +505,14 @@ def control_display(display_index: int, pir_pin: int) -> None:
                     cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
                     ret, frame = cap.read()
                 if ret:
-                    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                     h, w = frame.shape[:2]
-                    surf = pygame.image.frombuffer(frame.tobytes(), (w, h), "RGB")
+                    # Wrap the decoded frame straight into a surface: pygame reads
+                    # cv2's native BGR byte order directly (no cv2.cvtColor pass)
+                    # and consumes the numpy buffer in place (no .tobytes() copy).
+                    # In SCALED mode the surface already matches screen_size, so
+                    # the CPU scale below is skipped and the GPU upscales on flip;
+                    # the scale only runs in the plain-fullscreen fallback.
+                    surf = pygame.image.frombuffer(frame, (w, h), "BGR")
                     if (w, h) != screen_size:
                         surf = pygame.transform.scale(surf, screen_size)
                     screen.blit(surf, (0, 0))
