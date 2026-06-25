@@ -76,8 +76,9 @@ the matching display switches from black to playing the video on a loop. When mo
 screen returns to black; the next motion event restarts the video from frame 0.
 
 If the clip has an audio track and `ffmpeg` is installed, the **primary display (index 0)** also loops the sound while
-the video plays (extracted from the clip on startup). Only display 0 plays audio so two displays don't fight over the
-single output or drift out of sync; without `ffmpeg`, or for a silent clip, playback is silent.
+the video plays (extracted from the clip with `ffmpeg`, and re-extracted automatically if you swap the clip at
+runtime — see below). Only display 0 plays audio so two displays don't fight over the single output or drift out of
+sync; without `ffmpeg`, or for a silent clip, playback is silent.
 
 If `videos/milanka.mp4` is missing or unreadable, the app falls back to red-screen behavior — same triggering, just a
 flat red fullscreen instead of video.
@@ -86,7 +87,14 @@ flat red fullscreen instead of video.
 
 `install.sh` creates a Desktop shortcut named **`milanka-videos`** pointing to the videos folder. Double-click it from
 the Pi's desktop to open the folder in the file manager, then drag your new clip in, renaming it to `milanka.mp4`
-(replacing the existing one if any). Restart the service for the new video to be picked up:
+(replacing the existing one if any).
+
+The new clip is picked up automatically on the **next motion event** — the app re-opens the file every time it starts
+playing, so the picture, its soundtrack, and its frame rate all update without a restart. (The audio is re-extracted
+with `ffmpeg` the first time the swapped clip plays, so that one play starts a moment later than usual.)
+
+The one case that still needs a restart is a clip with **different pixel dimensions**: the GPU-scaled window is sized
+to the previous clip's resolution at startup, so resize it cleanly with:
 
 ```bash
 systemctl --user restart milanka

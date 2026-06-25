@@ -86,6 +86,18 @@ def _try_load_video():
     return cv2, fps, size
 
 
+def _video_mtime():
+    """Modification time of the clip on disk, or None if it can't be stat'd.
+
+    Used to notice when the user has swapped videos/milanka.mp4 while the app is
+    running, so the cached soundtrack can be re-extracted to match the new clip.
+    """
+    try:
+        return VIDEO_PATH.stat().st_mtime
+    except OSError:
+        return None
+
+
 def _setup_audio(video_path, prefix: str):
     """Extract the video's audio track to a temp wav and load it into the mixer.
 
@@ -304,6 +316,10 @@ def control_display(display_index: int, pir_pin: int) -> None:
             except Exception:
                 pass
         audio_ok = audio_path is not None
+        # mtime of the clip the cached audio was extracted from. If the file is
+        # swapped at runtime, this stops matching and the soundtrack is rebuilt
+        # on the next motion (see section 6) so the sound tracks the new video.
+        audio_mtime = _video_mtime()
 
         def present():
             """Flip the back buffer, blitting the overlay on top if we're in windowed mode."""
@@ -480,6 +496,37 @@ def control_display(display_index: int, pir_pin: int) -> None:
                 if mode == "video":
                     cap = cv2.VideoCapture(str(VIDEO_PATH))
                     next_frame_time = now
+                    # The file is re-opened every motion, so the picture already
+                    # reflects a swapped-in clip. Pick up its frame rate too, so
+                    # a clip recorded at a different fps plays at the right speed.
+                    new_fps = cap.get(cv2.CAP_PROP_FPS)
+                    if new_fps and new_fps > 0:
+                        frame_interval = 1.0 / new_fps
+                    # Display 0 owns the sound. If the clip changed on disk since
+                    # the cached audio was extracted, re-extract now so the new
+                    # picture isn't played over the old soundtrack. ffmpeg blocks
+                    # briefly here — a one-time cost on the first motion after a
+                    # swap; unchanged files skip this and start instantly.
+                    if display_index == 0:
+                        current_mtime = _video_mtime()
+                        if current_mtime != audio_mtime:
+                            print(
+                                f"{prefix} clip changed on disk → refreshing audio",
+                                flush=True,
+                            )
+                            try:
+                                pygame.mixer.music.stop()
+                            except Exception:
+                                pass
+                            old_audio = audio_path
+                            audio_path = _setup_audio(VIDEO_PATH, prefix)
+                            audio_ok = audio_path is not None
+                            audio_mtime = current_mtime
+                            if old_audio is not None and old_audio != audio_path:
+                                try:
+                                    os.unlink(old_audio)
+                                except OSError:
+                                    pass
                     if audio_ok:
                         # Loop the soundtrack for as long as motion holds; it
                         # restarts from the top on each new motion event.
