@@ -28,13 +28,16 @@ REPO_DIR = pathlib.Path(__file__).resolve().parent.parent
 # the repo. install.sh creates a Desktop symlink to this folder on the Pi.
 VIDEO_PATH = REPO_DIR / "videos" / "milanka.mp4"
 
-# Let the GPU upscale the video. When True, the fullscreen window is created at
-# the clip's native resolution with pygame's SCALED flag, so each decoded frame
-# is blitted 1:1 and SDL/the GPU stretches it to the panel on flip(). That
-# avoids a full-frame CPU upscale every frame — the main cause of the CPU
-# pegging at 100% (and the playback lag) when the clip is smaller than the
-# display. Set False to fall back to the old CPU scaling (pygame.transform.scale)
-# if SCALED ever misbehaves on a given setup.
+# Let the GPU upscale the video. When True, the fullscreen window uses pygame's
+# SCALED flag on a logical surface padded to the panel's aspect ratio, so each
+# decoded frame blits 1:1 (the clip stays at native pixels) and the GPU scales
+# the whole surface to the panel on flip() — preserving aspect ratio (black
+# bars, never stretched). That avoids a full-frame CPU upscale every frame — the
+# main cause of the CPU pegging at 100% (and the playback lag) when the clip is
+# smaller than the display. Set False to fall back to CPU scaling
+# (pygame.transform.scale), which also preserves aspect ratio, if SCALED ever
+# misbehaves on a given setup. Either way the clip is fit to each display's
+# detected native resolution.
 USE_GPU_SCALING = True
 
 # Display index → PIR pin (BCM numbering).

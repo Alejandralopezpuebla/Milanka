@@ -212,6 +212,47 @@ def _set_display_power(output_name: str, on: bool) -> bool:
         return False
 
 
+def _letterbox(clip, panel):
+    """Scale `clip` (w, h) to fit inside `panel` (w, h) preserving aspect ratio.
+
+    Returns (fit_w, fit_h, off_x, off_y): the largest size with the clip's
+    aspect ratio that fits in the panel, plus the centering offset that leaves
+    equal black bars around it. Used for the CPU-scaling fallback path.
+    """
+    cw, ch = clip
+    pw, ph = panel
+    if cw <= 0 or ch <= 0:
+        return pw, ph, 0, 0
+    scale = min(pw / cw, ph / ch)
+    fit_w = max(1, round(cw * scale))
+    fit_h = max(1, round(ch * scale))
+    return fit_w, fit_h, (pw - fit_w) // 2, (ph - fit_h) // 2
+
+
+def _logical_for_scaled(clip, panel):
+    """Logical SCALED surface that shows `clip` at native pixels, letterboxed.
+
+    Returns ((logical_w, logical_h), (off_x, off_y)). The logical surface is the
+    smallest one with the *panel's* aspect ratio that still contains the clip at
+    its native resolution, with the clip centered. Because the logical surface
+    matches the panel's aspect ratio, the GPU scales it to the panel uniformly
+    on flip() — the clip keeps its shape and the padding shows as black bars —
+    while each frame still blits 1:1 (no per-frame CPU scaling). This makes the
+    result correct regardless of how SDL maps a SCALED surface to the panel.
+    """
+    cw, ch = clip
+    pw, ph = panel
+    if cw <= 0 or ch <= 0 or pw <= 0 or ph <= 0:
+        return clip, (0, 0)
+    if cw * ph >= ch * pw:
+        # Clip is wider than the panel → pad top/bottom (letterbox).
+        log_w, log_h = cw, max(ch, round(cw * ph / pw))
+    else:
+        # Clip is taller than the panel → pad left/right (pillarbox).
+        log_w, log_h = max(cw, round(ch * pw / ph)), ch
+    return (log_w, log_h), ((log_w - cw) // 2, (log_h - ch) // 2)
+
+
 def control_display(display_index: int, pir_pin: int) -> None:
     """Drive a fullscreen window on `display_index` from the PIR on `pir_pin`."""
     # multiprocessing.fork() copies the parent's signal handlers into us.
@@ -266,30 +307,71 @@ def control_display(display_index: int, pir_pin: int) -> None:
         GPIO.setup(pir_pin, GPIO.IN)
 
         pygame.init()
-        # In video mode, create the fullscreen window at the clip's native size
-        # with SCALED so each decoded frame blits 1:1 and the GPU upscales it to
-        # the panel on flip() — no per-frame CPU upscale. (0, 0) means "use the
-        # desktop resolution"; with SCALED, pygame treats the size we pass as the
-        # logical render size and stretches it to that desktop resolution.
-        # Falls back to a plain fullscreen surface (CPU scaling) for the red
-        # screen, when GPU scaling is disabled, or if SCALED can't be created.
+
+        # Detect this display's native (max) resolution so we can fit the clip
+        # to it without distortion. get_desktop_sizes() returns one size per
+        # display in the same index order pygame uses for `display=`; on the
+        # Pi/labwc that's each panel's native mode. None if it can't be read.
+        panel_size = None
+        try:
+            sizes = pygame.display.get_desktop_sizes()
+            if display_index < len(sizes):
+                panel_size = tuple(sizes[display_index])
+        except Exception as e:
+            print(f"{prefix} could not read native resolution ({e})", flush=True)
+
+        # Fit the clip to the panel preserving aspect ratio (letterbox/pillarbox
+        # with black bars) — never stretch. `blit_size` is the size each decoded
+        # frame is drawn at; `video_offset` centers it, leaving the bars black.
+        #
+        #   GPU path (SCALED): the window's logical surface is padded to the
+        #   panel's aspect ratio while the clip stays at its native pixels, so
+        #   the GPU upscales the whole surface to the panel uniformly on flip()
+        #   — no per-frame CPU scaling and no distortion.
+        #   CPU fallback (red screen, GPU scaling off, or SCALED unavailable):
+        #   each frame is scaled to the aspect-preserving fit on the CPU.
         flags = pygame.FULLSCREEN | pygame.NOFRAME
         use_scaled = USE_GPU_SCALING and mode == "video" and video_size is not None
         screen = None
+        scaling = None         # "GPU" or "CPU", for logging
+        blit_size = None       # size each frame is scaled to before blitting
+        video_offset = (0, 0)  # top-left of the video inside the surface
         if use_scaled:
+            if panel_size is not None:
+                logical_size, video_offset = _logical_for_scaled(video_size, panel_size)
+            else:
+                # Native size unknown — let SDL's SCALED scale the clip directly.
+                logical_size, video_offset = video_size, (0, 0)
             try:
                 screen = pygame.display.set_mode(
-                    video_size, flags | pygame.SCALED, display=display_index,
+                    logical_size, flags | pygame.SCALED, display=display_index,
                 )
+                blit_size = video_size  # 1:1 blit; the GPU scales to the panel
+                scaling = "GPU"
             except pygame.error as e:
                 print(
                     f"{prefix} SCALED mode unavailable ({e}); using CPU scaling",
                     flush=True,
                 )
                 screen = None
+                video_offset = (0, 0)
         if screen is None:
             screen = pygame.display.set_mode(
                 (0, 0), flags, display=display_index,
+            )
+            scaling = "CPU"
+            if mode == "video" and video_size is not None:
+                fit_w, fit_h, off_x, off_y = _letterbox(video_size, screen.get_size())
+                blit_size = (fit_w, fit_h)
+                video_offset = (off_x, off_y)
+
+        if mode == "video" and video_size is not None and blit_size is not None:
+            native = f"{panel_size[0]}x{panel_size[1]}" if panel_size else "unknown"
+            print(
+                f"{prefix} native={native} clip={video_size[0]}x{video_size[1]} "
+                f"→ fit {blit_size[0]}x{blit_size[1]} at {video_offset} "
+                f"({scaling} scaling)",
+                flush=True,
             )
         pygame.display.set_caption(f"milanka display {display_index}")
 
@@ -494,6 +576,9 @@ def control_display(display_index: int, pir_pin: int) -> None:
             )
             if should_show and not showing_motion:
                 if mode == "video":
+                    # Clear to black so the letterbox/pillarbox bars are clean
+                    # before the first frame blits into the centered video rect.
+                    screen.fill(BLACK)
                     cap = cv2.VideoCapture(str(VIDEO_PATH))
                     next_frame_time = now
                     # The file is re-opened every motion, so the picture already
@@ -556,13 +641,16 @@ def control_display(display_index: int, pir_pin: int) -> None:
                     # Wrap the decoded frame straight into a surface: pygame reads
                     # cv2's native BGR byte order directly (no cv2.cvtColor pass)
                     # and consumes the numpy buffer in place (no .tobytes() copy).
-                    # In SCALED mode the surface already matches screen_size, so
-                    # the CPU scale below is skipped and the GPU upscales on flip;
-                    # the scale only runs in the plain-fullscreen fallback.
+                    # In GPU (SCALED) mode blit_size == the clip size, so the scale
+                    # below is skipped and each frame blits 1:1 into the letterboxed
+                    # logical surface (the GPU upscales to the panel on flip). In
+                    # the CPU fallback blit_size is the aspect-preserving fit, so the
+                    # frame is scaled to fit and centered at video_offset, leaving
+                    # the surrounding black bars untouched.
                     surf = pygame.image.frombuffer(frame, (w, h), "BGR")
-                    if (w, h) != screen_size:
-                        surf = pygame.transform.scale(surf, screen_size)
-                    screen.blit(surf, (0, 0))
+                    if blit_size is not None and (w, h) != blit_size:
+                        surf = pygame.transform.scale(surf, blit_size)
+                    screen.blit(surf, video_offset)
                     present()
                 next_frame_time = max(next_frame_time + frame_interval, now)
 
