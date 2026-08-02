@@ -72,16 +72,23 @@ After install (and on every boot from then on):
 ### Video on motion
 
 The app expects `videos/milanka.mp4` in the repo (so `/opt/Milanka/videos/milanka.mp4` on the Pi). When a PIR fires,
-the matching display switches from black to playing the video on a loop. When motion stops for `HOLD_SECONDS`, the
-screen returns to black; the next motion event restarts the video from frame 0.
+the matching display switches from black to playing the video. What happens next depends on `PLAY_FULL_VIDEO` in
+`src/config.py`:
 
-If the clip has an audio track and `ffmpeg` is installed, the **primary display (index 0)** also loops the sound while
-the video plays (extracted from the clip with `ffmpeg`, and re-extracted automatically if you swap the clip at
+- `PLAY_FULL_VIDEO = True` (default, "full-clip" mode): the clip always plays through to the end, even if motion
+  stops mid-clip. When it finishes, the screen returns to black; the next motion detected *after* that starts the
+  clip again from frame 0.
+- `PLAY_FULL_VIDEO = False` ("hold" mode): the video plays on a loop while motion continues and stops `HOLD_SECONDS`
+  after the last detection; the next motion event restarts it from frame 0.
+
+If the clip has an audio track and `ffmpeg` is installed, the **primary display (index 0)** also plays the sound along
+with the video — once per run in full-clip mode, looping in hold mode (extracted from the clip with `ffmpeg`, and re-extracted automatically if you swap the clip at
 runtime — see below). Only display 0 plays audio so two displays don't fight over the single output or drift out of
 sync; without `ffmpeg`, or for a silent clip, playback is silent.
 
 If `videos/milanka.mp4` is missing or unreadable, the app falls back to red-screen behavior — same triggering, just a
-flat red fullscreen instead of video.
+flat red fullscreen instead of video. The red screen has no natural end, so it always uses the hold behavior
+(`HOLD_SECONDS`) regardless of `PLAY_FULL_VIDEO`.
 
 #### Swapping the video on the Pi
 

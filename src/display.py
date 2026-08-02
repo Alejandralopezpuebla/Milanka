@@ -20,6 +20,7 @@ from config import (  # noqa: E402
     DISPLAY_OUTPUT_NAMES,
     HOLD_SECONDS,
     IDLE_TIMEOUT_SECONDS,
+    PLAY_FULL_VIDEO,
     POLL_INTERVAL,
     POWER_ON_DELAY_MS,
     RED,
@@ -286,7 +287,12 @@ def control_display(display_index: int, pir_pin: int) -> None:
     cap = None
     audio_path = None  # temp wav extracted from the clip; set up below on display 0
 
+    # PLAY_FULL_VIDEO only applies when there is a clip whose end can be
+    # reached; the red fallback always uses the HOLD_SECONDS behavior.
+    play_full_clip = PLAY_FULL_VIDEO and mode == "video"
+
     showing_motion = False
+    clip_ended_at = float("-inf")  # monotonic ts the last full-clip run finished
     power_state = "on"        # "on" or "off"
     waking_until = None       # monotonic ts when the wake delay ends, or None
     last_motion_time = None
@@ -438,6 +444,7 @@ def control_display(display_index: int, pir_pin: int) -> None:
 
         print(
             f"{prefix} ready (mode={mode}, "
+            f"playback={'full-clip' if play_full_clip else 'hold'}, "
             f"power_mgmt={'on (output=' + output_name + ')' if power_mgmt_ok else 'unavailable'})",
             flush=True,
         )
@@ -468,6 +475,7 @@ def control_display(display_index: int, pir_pin: int) -> None:
                         if audio_ok:
                             pygame.mixer.music.stop()
                         showing_motion = False  # force redraw on next loop iteration
+                        clip_ended_at = time.monotonic()  # require fresh motion to restart
                         screen = pygame.display.set_mode(
                             (640, 480), display=display_index,
                         )
@@ -540,6 +548,7 @@ def control_display(display_index: int, pir_pin: int) -> None:
                 if audio_ok:
                     pygame.mixer.music.stop()
                 showing_motion = False
+                clip_ended_at = now  # require fresh motion to restart playback
                 _set_display_power(output_name, False)
                 power_state = "off"
                 waking_until = None
@@ -570,10 +579,21 @@ def control_display(display_index: int, pir_pin: int) -> None:
                 print(f"{prefix} wake delay complete", flush=True)
 
             # 6. Normal motion → video/red transitions.
-            should_show = (
-                last_motion_time is not None
-                and (now - last_motion_time) < HOLD_SECONDS
-            )
+            if play_full_clip:
+                # Motion only *starts* the clip; once playing it runs through
+                # to its end no matter what the sensor does (section 7 stops
+                # it when the last frame is shown). Only motion seen after the
+                # previous run finished can start a new one, so a stale motion
+                # timestamp never replays the clip to an empty room.
+                should_show = showing_motion or (
+                    last_motion_time is not None
+                    and last_motion_time > clip_ended_at
+                )
+            else:
+                should_show = (
+                    last_motion_time is not None
+                    and (now - last_motion_time) < HOLD_SECONDS
+                )
             if should_show and not showing_motion:
                 if mode == "video":
                     # Clear to black so the letterbox/pillarbox bars are clean
@@ -613,9 +633,11 @@ def control_display(display_index: int, pir_pin: int) -> None:
                                 except OSError:
                                     pass
                     if audio_ok:
-                        # Loop the soundtrack for as long as motion holds; it
+                        # Full-clip mode: play the soundtrack once — it was
+                        # extracted from this clip so it ends with the picture.
+                        # Hold mode: loop it for as long as motion holds; it
                         # restarts from the top on each new motion event.
-                        pygame.mixer.music.play(loops=-1)
+                        pygame.mixer.music.play(loops=0 if play_full_clip else -1)
                 else:
                     screen.fill(RED)
                     present()
@@ -634,8 +656,20 @@ def control_display(display_index: int, pir_pin: int) -> None:
             if showing_motion and cap is not None and now >= next_frame_time:
                 ret, frame = cap.read()
                 if not ret:
-                    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                    ret, frame = cap.read()
+                    if play_full_clip:
+                        # End of clip: go black and wait for fresh motion
+                        # (section 6) instead of looping.
+                        cap.release()
+                        cap = None
+                        if audio_ok:
+                            pygame.mixer.music.stop()
+                        screen.fill(BLACK)
+                        present()
+                        showing_motion = False
+                        clip_ended_at = now
+                    else:
+                        cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                        ret, frame = cap.read()
                 if ret:
                     h, w = frame.shape[:2]
                     # Wrap the decoded frame straight into a surface: pygame reads

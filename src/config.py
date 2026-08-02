@@ -4,8 +4,20 @@ import pathlib
 
 # Sensor polling and screen state.
 POLL_INTERVAL = 1.0             # seconds between PIR readings
-HOLD_SECONDS = 9.0              # keep playing this long after the last detected motion
+HOLD_SECONDS = 9.0              # (hold mode only) keep playing this long after the last detected motion
 HOTPLUG_CHECK_INTERVAL = 3.0    # how often the parent re-checks the display list
+
+# What motion does to video playback.
+#   True  — motion starts the clip and it always plays through to the end:
+#           losing sight of the person mid-clip does NOT stop it. When the
+#           clip finishes the screen goes black, and only motion detected
+#           after that starts it again from the beginning.
+#   False — hold mode (the original behavior): the video plays (looping)
+#           while motion continues and stops HOLD_SECONDS after the last
+#           detection.
+# The red fallback screen (shown when no video is playable) has no natural
+# end, so it always uses the hold behavior regardless of this setting.
+PLAY_FULL_VIDEO = True
 
 # Per-poll PIR readings are logged only on state changes by default (keeps the
 # journal small for long-running deployments). Set True to log every poll —
