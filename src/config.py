@@ -11,13 +11,22 @@ HOTPLUG_CHECK_INTERVAL = 3.0    # how often the parent re-checks the display lis
 #   True  — motion starts the clip and it always plays through to the end:
 #           losing sight of the person mid-clip does NOT stop it. When the
 #           clip finishes the screen goes black, and only motion detected
-#           after that starts it again from the beginning.
+#           after REPLAY_COOLDOWN_SECONDS have passed starts it again from
+#           the beginning.
 #   False — hold mode (the original behavior): the video plays (looping)
 #           while motion continues and stops HOLD_SECONDS after the last
 #           detection.
 # The red fallback screen (shown when no video is playable) has no natural
 # end, so it always uses the hold behavior regardless of this setting.
 PLAY_FULL_VIDEO = True
+
+# (full-clip mode only) After a run finishes, ignore the sensor for this long
+# before motion can start the clip again. Motion must be detected *after* the
+# cooldown expires to trigger the next run — movement during the cooldown is
+# ignored, not queued, so the clip never replays to a room that has already
+# emptied. Set to 0 to restore the old replay-immediately behavior. Hold mode
+# and the red fallback are unaffected.
+REPLAY_COOLDOWN_SECONDS = 60.0
 
 # Per-poll PIR readings are logged only on state changes by default (keeps the
 # journal small for long-running deployments). Set True to log every poll —

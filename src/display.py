@@ -24,6 +24,7 @@ from config import (  # noqa: E402
     POLL_INTERVAL,
     POWER_ON_DELAY_MS,
     RED,
+    REPLAY_COOLDOWN_SECONDS,
     USE_GPU_SCALING,
     VERBOSE_LOGGING,
     VIDEO_PATH,
@@ -292,7 +293,10 @@ def control_display(display_index: int, pir_pin: int) -> None:
     play_full_clip = PLAY_FULL_VIDEO and mode == "video"
 
     showing_motion = False
-    clip_ended_at = float("-inf")  # monotonic ts the last full-clip run finished
+    # Motion detected before this monotonic ts can't start the clip. Stamped at
+    # the end of each full-clip run (plus REPLAY_COOLDOWN_SECONDS) and on other
+    # playback interruptions, so replaying always takes fresh motion.
+    replay_allowed_at = float("-inf")
     power_state = "on"        # "on" or "off"
     waking_until = None       # monotonic ts when the wake delay ends, or None
     last_motion_time = None
@@ -475,7 +479,7 @@ def control_display(display_index: int, pir_pin: int) -> None:
                         if audio_ok:
                             pygame.mixer.music.stop()
                         showing_motion = False  # force redraw on next loop iteration
-                        clip_ended_at = time.monotonic()  # require fresh motion to restart
+                        replay_allowed_at = time.monotonic()  # require fresh motion to restart
                         screen = pygame.display.set_mode(
                             (640, 480), display=display_index,
                         )
@@ -520,9 +524,13 @@ def control_display(display_index: int, pir_pin: int) -> None:
                         remaining = HOLD_SECONDS - (now - last_motion_time)
                         if remaining > 0:
                             hold = f"{remaining:4.1f}s"
+                    cooldown = "-"
+                    if play_full_clip and replay_allowed_at > now:
+                        cooldown = f"{replay_allowed_at - now:4.1f}s"
                     stamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
                     print(
-                        f"{stamp} {prefix} raw={motion} {state_label:<5} hold={hold}",
+                        f"{stamp} {prefix} raw={motion} {state_label:<5} "
+                        f"hold={hold} cooldown={cooldown}",
                         flush=True,
                     )
                     prev_state_label = state_label
@@ -548,7 +556,7 @@ def control_display(display_index: int, pir_pin: int) -> None:
                 if audio_ok:
                     pygame.mixer.music.stop()
                 showing_motion = False
-                clip_ended_at = now  # require fresh motion to restart playback
+                replay_allowed_at = now  # require fresh motion to restart playback
                 _set_display_power(output_name, False)
                 power_state = "off"
                 waking_until = None
@@ -582,12 +590,14 @@ def control_display(display_index: int, pir_pin: int) -> None:
             if play_full_clip:
                 # Motion only *starts* the clip; once playing it runs through
                 # to its end no matter what the sensor does (section 7 stops
-                # it when the last frame is shown). Only motion seen after the
-                # previous run finished can start a new one, so a stale motion
-                # timestamp never replays the clip to an empty room.
+                # it when the last frame is shown). A new run needs motion seen
+                # after replay_allowed_at — the previous run's end plus the
+                # replay cooldown — so a stale motion timestamp never replays
+                # the clip to an empty room, and someone lingering in front of
+                # the sensor doesn't retrigger it until the cooldown is over.
                 should_show = showing_motion or (
                     last_motion_time is not None
-                    and last_motion_time > clip_ended_at
+                    and last_motion_time > replay_allowed_at
                 )
             else:
                 should_show = (
@@ -658,7 +668,9 @@ def control_display(display_index: int, pir_pin: int) -> None:
                 if not ret:
                     if play_full_clip:
                         # End of clip: go black and wait for fresh motion
-                        # (section 6) instead of looping.
+                        # (section 6) instead of looping. The cooldown keeps
+                        # the sensor ignored for a while first, so the clip
+                        # doesn't restart back-to-back for the same audience.
                         cap.release()
                         cap = None
                         if audio_ok:
@@ -666,7 +678,7 @@ def control_display(display_index: int, pir_pin: int) -> None:
                         screen.fill(BLACK)
                         present()
                         showing_motion = False
-                        clip_ended_at = now
+                        replay_allowed_at = now + REPLAY_COOLDOWN_SECONDS
                     else:
                         cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
                         ret, frame = cap.read()
